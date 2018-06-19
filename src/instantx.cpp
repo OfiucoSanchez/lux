@@ -32,7 +32,7 @@ int nCompleteTXLocks;
 
 void ProcessInstantX(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, bool &isInstantXCommand)
 {
-    if(!IsSporkActive(SPORK_7_INSTANTX)) return;
+    if(!IsSporkActive(SPORK_6_INSTANTX)) return;
     if(IsInitialBlockDownload()) return;
 
     if (strCommand == "txlreq") {

@@ -5553,6 +5553,11 @@ static bool ProcessMessage(CNode* pfrom, const string &strCommand, CDataStream& 
     }
 
     if (strCommand == "version") {
+        // Feeler connections exist only to verify if address is online.
+        if (pfrom->fFeeler) {
+            assert(pfrom->fInbound == false);
+            pfrom->fDisconnect = true;
+        }
         // Each connection can only send one version message
         if (pfrom->nVersion != 0) {
             pfrom->PushMessage("reject", strCommand, REJECT_DUPLICATE, string("Duplicate version message"));

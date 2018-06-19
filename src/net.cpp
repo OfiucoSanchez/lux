@@ -42,6 +42,9 @@
 // Dump addresses to peers.dat every 15 minutes (900s)
 #define DUMP_ADDRESSES_INTERVAL 900
 
+// We add a random period time (0 to 1 seconds) to feeler connections to prevent synchronization.
+#define FEELER_SLEEP_WINDOW 1
+
 #if !defined(HAVE_MSG_NOSIGNAL) && !defined(MSG_NOSIGNAL)
 #define MSG_NOSIGNAL 0
 #endif
@@ -63,6 +66,7 @@ using namespace std;
 namespace
 {
 const int MAX_OUTBOUND_CONNECTIONS = 16;
+const int MAX_FEELER_CONNECTIONS = 1;
 
 struct ListenSocket {
     SOCKET socket;
@@ -704,6 +708,68 @@ void SocketSendData(CNode* pnode)
 
 static list<CNode*> vNodesDisconnected;
 
+void AcceptConnection(const ListenSocket& hListenSocket) {
+    struct sockaddr_storage sockaddr;
+    socklen_t len = sizeof(sockaddr);
+    SOCKET hSocket = accept(hListenSocket.socket, (struct sockaddr*)&sockaddr, &len);
+    CAddress addr;
+    int nInbound = 0;
+    int nMaxInbound = nMaxConnections - (MAX_OUTBOUND_CONNECTIONS + MAX_FEELER_CONNECTIONS);
+    assert(nMaxInbound > 0);
+
+    if (hSocket != INVALID_SOCKET)
+        if (!addr.SetSockAddr((const struct sockaddr*)&sockaddr))
+            LogPrintf("Warning: Unknown socket family\n");
+
+    bool whitelisted = hListenSocket.whitelisted || CNode::IsWhitelistedRange(addr);
+    {
+        LOCK(cs_vNodes);
+        BOOST_FOREACH(CNode* pnode, vNodes)
+        if (pnode->fInbound)
+            nInbound++;
+    }
+
+    if (hSocket == INVALID_SOCKET)
+    {
+        int nErr = WSAGetLastError();
+        if (nErr != WSAEWOULDBLOCK)
+            LogPrintf("socket error accept failed: %s\n", NetworkErrorString(nErr));
+    }
+    else if (!IsSelectableSocket(hSocket))
+    {
+        LogPrintf("connection from %s dropped: non-selectable socket\n", addr.ToString());
+        CloseSocket(hSocket);
+    }
+    else if (nInbound >= nMaxInbound)
+    {
+        LogPrint("net", "connection from %s dropped (full)\n", addr.ToString());
+        CloseSocket(hSocket);
+    }
+    else if (!whitelisted && (nInbound >= (nMaxInbound - nMaxConnections)))
+    {
+        LogPrint("net", "connection from %s dropped (non-whitelisted)\n", addr.ToString());
+        CloseSocket(hSocket);
+    }
+    else if (CNode::IsBanned(addr) && !whitelisted)
+    {
+        LogPrintf("connection from %s dropped (banned)\n", addr.ToString());
+        CloseSocket(hSocket);
+    }
+    else
+    {
+        CNode* pnode = new CNode(hSocket, addr, "", true);
+        pnode->AddRef();
+        pnode->fWhitelisted = whitelisted;
+
+        LogPrint("net", "connection from %s accepted\n", addr.ToString());
+
+        {
+            LOCK(cs_vNodes);
+            vNodes.push_back(pnode);
+        }
+    }
+}
+
 void ThreadSocketHandler()
 {
     unsigned int nPrevNodeCount = 0;
@@ -856,50 +922,7 @@ void ThreadSocketHandler()
         //
         BOOST_FOREACH (const ListenSocket& hListenSocket, vhListenSocket) {
             if (hListenSocket.socket != INVALID_SOCKET && FD_ISSET(hListenSocket.socket, &fdsetRecv)) {
-                struct sockaddr_storage sockaddr;
-                socklen_t len = sizeof(sockaddr);
-                SOCKET hSocket = accept(hListenSocket.socket, (struct sockaddr*)&sockaddr, &len);
-                CAddress addr;
-                int nInbound = 0;
-
-                if (hSocket != INVALID_SOCKET)
-                    if (!addr.SetSockAddr((const struct sockaddr*)&sockaddr))
-                        LogPrintf("Warning: Unknown socket family\n");
-
-                bool whitelisted = hListenSocket.whitelisted || CNode::IsWhitelistedRange(addr);
-                {
-                    LOCK(cs_vNodes);
-                    BOOST_FOREACH (CNode* pnode, vNodes)
-                        if (pnode->fInbound)
-                            nInbound++;
-                }
-
-                if (hSocket == INVALID_SOCKET) {
-                    int nErr = WSAGetLastError();
-                    if (nErr != WSAEWOULDBLOCK)
-                        LogPrintf("socket error accept failed: %s\n", NetworkErrorString(nErr));
-                } else if (!IsSelectableSocket(hSocket)) {
-                    LogPrintf("connection from %s dropped: non-selectable socket\n", addr.ToString());
-                    CloseSocket(hSocket);
-                } else if (nInbound >= nMaxConnections - MAX_OUTBOUND_CONNECTIONS) {
-                    LogPrint("net", "connection from %s dropped (full)\n", addr.ToString());
-                    CloseSocket(hSocket);
-                } else if (CNode::IsBanned(addr) && !whitelisted) {
-                    LogPrintf("connection from %s dropped (banned)\n", addr.ToString());
-                    CloseSocket(hSocket);
-                } else if (!fNetworkActive) {
-                    printf("connection from %s dropped (not accepting new connections)\n", addr.ToString().c_str());
-                    //closesocket(hSocket);
-                  } else {
-                    CNode* pnode = new CNode(hSocket, addr, "", true);
-                    pnode->AddRef();
-                    pnode->fWhitelisted = whitelisted;
-
-                    {
-                        LOCK(cs_vNodes);
-                        vNodes.push_back(pnode);
-                    }
-                }
+                AcceptConnection(hListenSocket);
             }
         }
 
@@ -1183,8 +1206,31 @@ void static ProcessOneShot()
     }
 }
 
-void ThreadOpenConnections()
+int GetExtraOutboundCount()
 {
+    int nMaxOutbound = 0;
+    int nOutbound = 0;
+    {
+        LOCK(cs_vNodes);
+        for (CNode* pnode : vNodes) {
+            if (!pnode->fInbound && !pnode->fFeeler && !pnode->fDisconnect && !pnode->fOneShot && pnode->fSuccessfullyConnected) {
+                ++nOutbound;
+            }
+        }
+    }
+    return std::max(nOutbound - nMaxOutbound, 0);
+}
+
+std::atomic_bool m_try_another_outbound_peer;
+bool GetTryNewOutboundPeer() {
+    return m_try_another_outbound_peer;
+}
+
+void SetTryNewOutboundPeer(bool flag) {
+    m_try_another_outbound_peer = flag;
+}
+
+void ThreadOpenConnections() {
     // Connect to specific addresses
     if (mapArgs.count("-connect") && mapMultiArgs["-connect"].size() > 0) {
         for (int64_t nLoop = 0;; nLoop++) {
@@ -1228,14 +1274,35 @@ void ThreadOpenConnections()
         // Only connect out to one peer per network group (/16 for IPv4).
         // Do this here so we don't have to critsect vNodes inside mapAddresses critsect.
         int nOutbound = 0;
-        set<vector<unsigned char> > setConnected;
-        {
+        set<vector<unsigned char> > setConnected;{
             LOCK(cs_vNodes);
             BOOST_FOREACH (CNode* pnode, vNodes) {
                 if (!pnode->fInbound) {
                     setConnected.insert(pnode->addr.GetGroup());
                     nOutbound++;
                 }
+            }
+        }
+
+        assert(nOutbound <= (MAX_OUTBOUND_CONNECTIONS + MAX_FEELER_CONNECTIONS));
+
+        // Feeler Connections
+        //
+        // Design goals:
+        //  * Increase the number of connectable addresses in the tried table.
+        //
+
+        int64_t nNextFeeler = PoissonNextSend(nStart*1000*1000, FEELER_INTERVAL);
+        int nMaxOutbound = 0;
+        bool fFeeler = false;
+
+        if (nOutbound >= nMaxOutbound && !GetTryNewOutboundPeer()) {
+            int64_t nTime = GetTimeMicros(); // The current time right now (in microseconds).
+            if (nTime > nNextFeeler) {
+                nNextFeeler = PoissonNextSend(nTime, FEELER_INTERVAL);
+                fFeeler = true;
+            } else {
+                continue;
             }
         }
 
@@ -1279,8 +1346,15 @@ void ThreadOpenConnections()
             break;
         }
 
-        if (addrConnect.IsValid())
+        if (addrConnect.IsValid()) {
+            if (fFeeler) {
+                // Add small amount of random noise before connection to avoid synchronization.
+                int randsleep = GetRandInt(FEELER_SLEEP_WINDOW * 1000);
+                MilliSleep(randsleep);
+                LogPrint("net", "Making feeler connection to %s\n", addrConnect.ToString());
+            }
             OpenNetworkConnection(addrConnect, &grant);
+        }
     }
 }
 
@@ -1352,7 +1426,7 @@ void ThreadOpenAddedConnections()
 }
 
 // if successful, this moves the passed grant to the constructed node
-bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant* grantOutbound, const char* pszDest, bool fOneShot)
+bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant* grantOutbound, const char* pszDest, bool fOneShot, bool fFeeler)
 {
     //
     // Initiate outbound network connection
@@ -1378,10 +1452,11 @@ bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant* grantOu
     pnode->fNetworkNode = true;
     if (fOneShot)
         pnode->fOneShot = true;
+    if (fFeeler)
+        pnode->fFeeler = true;
 
     return true;
 }
-
 
 void ThreadMessageHandler()
 {
@@ -1611,7 +1686,7 @@ void StartNode(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     if (semOutbound == NULL) {
         // initialize semaphore
-        int nMaxOutbound = min(MAX_OUTBOUND_CONNECTIONS, nMaxConnections);
+        int nMaxOutbound = std::min((MAX_OUTBOUND_CONNECTIONS + MAX_FEELER_CONNECTIONS), nMaxConnections);
         semOutbound = new CSemaphore(nMaxOutbound);
     }
 
@@ -1663,7 +1738,7 @@ bool StopNode()
     LogPrintf("StopNode()\n");
     MapPort(false);
     if (semOutbound)
-        for (int i = 0; i < MAX_OUTBOUND_CONNECTIONS; i++)
+        for (int i=0; i<(MAX_OUTBOUND_CONNECTIONS + MAX_FEELER_CONNECTIONS); i++)
             semOutbound->post();
 
     if (fAddressesInitialized) {
@@ -1883,6 +1958,10 @@ void CNode::RecordBytesSent(uint64_t bytes)
     nTotalBytesSent += bytes;
 }
 
+int64_t PoissonNextSend(int64_t nNow, int average_interval_seconds) {
+    return nNow + (int64_t)(log1p(GetRand(1ULL << 48) * -0.0000000000000035527136788 /* -1/2^48 */) * average_interval_seconds * -1000000.0 + 0.5);
+}
+
 uint64_t CNode::GetTotalBytesRecv()
 {
     LOCK(cs_totalBytesRecv);
@@ -2044,6 +2123,7 @@ CNode::CNode(SOCKET hSocketIn, CAddress addrIn, std::string addrNameIn, bool fIn
     fWhitelisted = false;
     fOneShot = false;
     fClient = false; // set by version message
+    fFeeler = false;
     fInbound = fInboundIn;
     fNetworkNode = false;
     fSuccessfullyConnected = false;
