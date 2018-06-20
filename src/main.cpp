@@ -423,10 +423,10 @@ void ProcessBlockAvailability(NodeId nodeid)
     assert(state != NULL);
 
     if (state->hashLastUnknownBlock != 0) {
-        BlockMap::iterator itOld = mapBlockIndex.find(state->hashLastUnknownBlock);
-        if (itOld != mapBlockIndex.end() && itOld->second->nChainWork > 0) {
-            if (state->pindexBestKnownBlock == NULL || itOld->second->nChainWork >= state->pindexBestKnownBlock->nChainWork)
-                state->pindexBestKnownBlock = itOld->second;
+        CBlockIndex* pindex = LookupBlockIndex(state->hashLastUnknownBlock);
+        if (pindex && pindex->nChainWork > 0) {
+            if (state->pindexBestKnownBlock == NULL || pindex->nChainWork >= state->pindexBestKnownBlock->nChainWork)
+                state->pindexBestKnownBlock = pindex;
             state->hashLastUnknownBlock = uint256(0);
         }
     }
@@ -440,11 +440,11 @@ void UpdateBlockAvailability(NodeId nodeid, const uint256& hash)
 
     ProcessBlockAvailability(nodeid);
 
-    BlockMap::iterator it = mapBlockIndex.find(hash);
-    if (it != mapBlockIndex.end() && it->second->nChainWork > 0) {
+    CBlockIndex* pindex = LookupBlockIndex(hash);
+    if (pindex && pindex->nChainWork > 0) {
         // An actually better block was announced.
-        if (state->pindexBestKnownBlock == NULL || it->second->nChainWork >= state->pindexBestKnownBlock->nChainWork)
-            state->pindexBestKnownBlock = it->second;
+        if (state->pindexBestKnownBlock == NULL || pindex->nChainWork >= state->pindexBestKnownBlock->nChainWork)
+            state->pindexBestKnownBlock = pindex;
     } else {
         // An unknown block was announced; just assume that the latest one is the best one.
         state->hashLastUnknownBlock = hash;
@@ -594,14 +594,12 @@ void UnregisterNodeSignals(CNodeSignals& nodeSignals)
 
 CBlockIndex* FindForkInGlobalIndex(const CChain& chain, const CBlockLocator& locator)
 {
+    LOCK(cs_main);
     // Find the first block the caller has in the main chain
     BOOST_FOREACH (const uint256& hash, locator.vHave) {
-        BlockMap::iterator mi = mapBlockIndex.find(hash);
-        if (mi != mapBlockIndex.end()) {
-            CBlockIndex* pindex = (*mi).second;
-            if (chain.Contains(pindex))
-                return pindex;
-        }
+        CBlockIndex* pindex = LookupBlockIndex(hash);
+        if (pindex && chain.Contains(pindex))
+            return pindex;
     }
     return chain.Genesis();
 }
@@ -814,10 +812,8 @@ bool GetCoinAge(const CTransaction& tx, const unsigned int nTxTime, uint64_t& nC
             continue; // previous transaction not in main chain
         }
 
-        BlockMap::iterator it = mapBlockIndex.find(hashBlockPrev);
-        if (it != mapBlockIndex.end())
-            pindex = it->second;
-        else {
+        pindex = LookupBlockIndex(hashBlockPrev);
+        if (!pindex) {
             LogPrintf("GetCoinAge() failed to find block index \n");
             continue;
         }
@@ -1635,11 +1631,8 @@ bool GetTransaction(const uint256& hash, CTransaction& txOut, const Consensus::P
                 return error("%s: Deserialize or I/O error - %s", __func__, e.what());
             }
 
-            bool usePhi2 = false;
-            BlockMap::iterator mi = mapBlockIndex.find(header.hashPrevBlock);
-            if (mi != mapBlockIndex.end()) {
-                usePhi2 = mi->second->nHeight + 1 >= Params().SwitchPhi2Block();
-            }
+            CBlockIndex* pindexPrev = LookupBlockIndex(header.hashPrevBlock);
+            bool usePhi2 = pindexPrev ? pindexPrev->nHeight + 1 >= Params().SwitchPhi2Block() : false;
 
             hashBlock = header.GetHash(usePhi2);
             if (txOut.GetHash() != hash)
@@ -1735,10 +1728,9 @@ bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, int nHeight, con
 
         //Genesis block's hash cannot be calculated using PHI2, so no need to check PHI2 block hash
         if (block.GetHash() != chainparams.GetConsensus().hashGenesisBlock) {
-            BlockMap::iterator mi = mapBlockIndex.find(block.hashPrevBlock);
-            if (mi == mapBlockIndex.end())
+            pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+            if (!pindexPrev)
                 return state.DoS(0, error("%s : prev block %s not found", __func__, block.hashPrevBlock.GetHex()), 0, "bad-prevblk");
-            pindexPrev = (*mi).second;
         }
          
          if (!stake->CheckProof(pindexPrev, block, hashProofOfStake))
@@ -2277,15 +2269,15 @@ void ThreadScriptCheck()
 static bool IsBlockValueValid(const CBlock& block, int64_t nExpectedValue)
 {
     CBlockIndex* pindexPrev = chainActive.Tip();
-    if (pindexPrev == NULL) return true;
+    if (!pindexPrev) return true;
 
     int nHeight = 0;
     if (pindexPrev->GetBlockHash() == block.hashPrevBlock) {
         nHeight = pindexPrev->nHeight + 1;
     } else { //out of order
-        BlockMap::iterator mi = mapBlockIndex.find(block.hashPrevBlock);
-        if (mi != mapBlockIndex.end() && (*mi).second)
-            nHeight = (*mi).second->nHeight + 1;
+        pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+        if (pindexPrev)
+            nHeight = pindexPrev->nHeight + 1;
     }
 
     if (nHeight == 0) {
@@ -2713,7 +2705,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     ////////////////////////////////////////////////////////////////// // lux
     if (pindex->nHeight >= Params().FirstSCBlock()) {
-        checkBlock.hashMerkleRoot = checkBlock.BuildMerkleTree();
+        checkBlock.hashMerkleRoot = BlockMerkleRoot(checkBlock);
         checkBlock.hashStateRoot = h256Touint(globalState->rootHash());
         checkBlock.hashUTXORoot = h256Touint(globalState->rootHashUTXO());
 
@@ -3522,17 +3514,14 @@ bool ReconsiderBlock(CValidationState& state, CBlockIndex* pindex)
 
 CBlockIndex* AddToBlockIndex(const CBlock& block)
 {
-    BlockMap::iterator prev_block_it = mapBlockIndex.find(block.hashPrevBlock);
-    bool usePhi2 = false;
-    if (prev_block_it != mapBlockIndex.end()) {
-        usePhi2 = prev_block_it->second->nHeight + 1 >= Params().SwitchPhi2Block();
-    }
+    CBlockIndex* pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+    bool usePhi2 = pindexPrev ? pindexPrev->nHeight + 1 >= Params().SwitchPhi2Block() : false;
 
     // Check for duplicate
     uint256 hash = block.GetHash(usePhi2);
-    BlockMap::iterator it = mapBlockIndex.find(hash);
-    if (it != mapBlockIndex.end())
-        return it->second;
+    CBlockIndex* pindex = LookupBlockIndex(hash);
+    if (pindex)
+        return pindex;
 
     // Construct new block index object
     CBlockIndex* pindexNew = new CBlockIndex(block);
@@ -3549,9 +3538,8 @@ CBlockIndex* AddToBlockIndex(const CBlock& block)
         stake->MarkStake(pindexNew->prevoutStake, pindexNew->nStakeTime);
 
     pindexNew->phashBlock = &((*mi).first);
-    BlockMap::iterator miPrev = mapBlockIndex.find(block.hashPrevBlock);
-    if (miPrev != mapBlockIndex.end()) {
-        pindexNew->pprev = (*miPrev).second;
+    if (pindexPrev) {
+        pindexNew->pprev = pindexPrev;
         pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
         pindexNew->BuildSkip();
 
@@ -3754,9 +3742,10 @@ static CDiskBlockPos SaveBlockToDisk(CValidationState& state, const CBlock& bloc
 bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW) {
     // Get prev block index
     bool usePhi2 = false;
-    BlockMap::iterator mi = mapBlockIndex.find(block.hashPrevBlock);
-    if (mi != mapBlockIndex.end()) {
-        usePhi2 = mi->second->nHeight + 1 >= Params().SwitchPhi2Block();
+    int nBlockHeight = 0;
+    CBlockIndex* pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+    if (pindexPrev) {
+        usePhi2 = pindexPrev->nHeight + 1 >= Params().SwitchPhi2Block();
     }
 
     // Check proof of work matches claimed amount
@@ -3792,7 +3781,7 @@ bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::P
     // Check the merkle root.
     if (fCheckMerkleRoot) {
         bool mutated;
-        uint256 hashMerkleRoot2 = block.BuildMerkleTree(&mutated);
+        uint256 hashMerkleRoot2 = BlockMerkleRoot(block, &mutated);
         if (block.hashMerkleRoot != hashMerkleRoot2)
             return state.DoS(100, error("%s: invalid merkle root", __func__),
                 REJECT_INVALID, "bad-txnmrklroot", true);
@@ -4035,21 +4024,23 @@ bool AcceptBlockHeader(const CBlock& block, CValidationState& state, const CChai
 {
     AssertLockHeld(cs_main);
 
-    BlockMap::iterator prev_block_it = mapBlockIndex.find(block.hashPrevBlock);
+    // Get prev block index
+    CBlockIndex* pindexPrev = LookupBlockIndex(block.hashPrevBlock);
     bool usePhi2 = false;
-    if (prev_block_it != mapBlockIndex.end()) {
-        usePhi2 = prev_block_it->second->nHeight + 1 >= Params().SwitchPhi2Block();
+    if (pindexPrev) {
+        usePhi2 = pindexPrev->nHeight + 1 >= Params().SwitchPhi2Block();
+    } else {
+        if (block.GetHash() != Params().GenesisBlock().GetHash())
+            return state.DoS(0, error("%s : prev block %s not found", __func__, block.hashPrevBlock.GetHex()), 0, "bad-prevblk");
     }
 
     // Check for duplicate
     uint256 hash = block.GetHash(usePhi2);
-    BlockMap::iterator miSelf = mapBlockIndex.find(hash);
-    CBlockIndex* pindex = NULL;
+    CBlockIndex* pindex = LookupBlockIndex(hash);
 
     // TODO : ENABLE BLOCK CACHE IN SPECIFIC CASES
-    if (miSelf != mapBlockIndex.end()) {
+    if (pindex) {
         // Block header is already known.
-        pindex = miSelf->second;
         if (ppindex)
             *ppindex = pindex;
 //        if (pindex->nStatus & BLOCK_FAILED_MASK)
@@ -4060,17 +4051,6 @@ bool AcceptBlockHeader(const CBlock& block, CValidationState& state, const CChai
     if (!CheckBlockHeader(block, state, chainparams.GetConsensus(), block.IsProofOfWork())) {
         LogPrintf("%s: CheckBlockHeader failed \n", __func__);
         return false;
-    }
-
-    // Get prev block index
-    CBlockIndex* pindexPrev = NULL;
-    if (hash != chainparams.GetConsensus().hashGenesisBlock) {
-        BlockMap::iterator mi = mapBlockIndex.find(block.hashPrevBlock);
-        if (mi == mapBlockIndex.end())
-            return state.DoS(0, error("%s : prev block %s not found", __func__, block.hashPrevBlock.GetHex()), 0, "bad-prevblk");
-        pindexPrev = (*mi).second;
-//        if (pindexPrev->nStatus & BLOCK_FAILED_MASK)
-//            return state.DoS(100, error("%s : prev block invalid", __func__), REJECT_INVALID, "bad-prevblk");
     }
 
     if (!ContextualCheckBlockHeader(block, state, chainparams.GetConsensus(), pindexPrev))
@@ -4095,10 +4075,9 @@ bool AcceptBlock(const CBlock& block, CValidationState& state, const CChainParam
     CBlockIndex* pindexPrev = NULL;
     //Genesis block's hash cannot be calculated using PHI2, so no need to check PHI2 block hash
     if (block.GetHash() != chainparams.GetConsensus().hashGenesisBlock) {
-        BlockMap::iterator mi = mapBlockIndex.find(block.hashPrevBlock);
-        if (mi == mapBlockIndex.end())
+        pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+        if (!pindexPrev)
             return state.DoS(0, error("%s : prev block %s not found", __func__, block.hashPrevBlock.GetHex()), 0, "bad-prevblk");
-        pindexPrev = (*mi).second;
 //        if (pindexPrev->nStatus & BLOCK_FAILED_MASK)
 //            return state.DoS(100, error("%s : prev block invalid", __func__), REJECT_INVALID, "bad-prevblk");
     }
@@ -4272,12 +4251,12 @@ bool ProcessNewBlock(CValidationState& state, const CChainParams& chainparams, C
 
     // Check if the prev block is our prev block, if not then request sync and return false
     else if (pblock->GetHash() != chainparams.GetConsensus().hashGenesisBlock && pfrom != NULL) {
-        BlockMap::iterator mi = mapBlockIndex.find(pblock->hashPrevBlock);
-        if (mi == mapBlockIndex.end()) {
+        CBlockIndex* pindexPrev = LookupBlockIndex(pblock->hashPrevBlock);
+        if (!pindexPrev) {
             pfrom->PushMessage("getblocks", chainActive.GetLocator(), uint256(0));
             return false;
         } else {
-            usePhi2 = mi->second->nHeight + 1 >= Params().SwitchPhi2Block();
+            usePhi2 = pindexPrev->nHeight + 1 >= Params().SwitchPhi2Block();
         }
     }
 
@@ -4779,10 +4758,10 @@ bool static LoadBlockIndexDB(const CChainParams& chainparams)
     pblocktree->WriteFlag("shutdown", false);
 
     // Load pointer to end of best chain
-    BlockMap::iterator it = mapBlockIndex.find(pcoinsTip->GetBestBlock());
-    if (it == mapBlockIndex.end())
+    CBlockIndex* pindexPrev = LookupBlockIndex(pcoinsTip->GetBestBlock());
+    if (!pindexPrev)
         return true;
-    chainActive.SetTip(it->second);
+    chainActive.SetTip(pindexPrev);
 
     PruneBlockIndexCandidates();
 
@@ -5025,7 +5004,8 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
 
                 // detect out of order blocks, and store them for later
                 uint256 hash = block.GetHash();
-                if (hash != chainparams.GetConsensus().hashGenesisBlock && mapBlockIndex.find(block.hashPrevBlock) == mapBlockIndex.end()) {
+                CBlockIndex* pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+                if (hash != chainparams.GetConsensus().hashGenesisBlock && pindexPrev == NULL) {
                     LogPrint("reindex", "%s: Out of order block %s, parent %s not known\n", __func__, hash.ToString(),
                         block.hashPrevBlock.ToString());
                     if (dbp)
@@ -5033,12 +5013,7 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                     continue;
                 }
 
-                BlockMap::iterator prev_block_it = mapBlockIndex.find(block.hashPrevBlock);
-                bool usePhi2 = false;
-                if (prev_block_it != mapBlockIndex.end()) {
-                    usePhi2 = prev_block_it->second->nHeight + 1 >= Params().SwitchPhi2Block();
-                }
-
+                bool usePhi2 = pindexPrev ? pindexPrev->nHeight + 1 >= Params().SwitchPhi2Block() : false;
                 if (usePhi2) {
                     hash = block.GetHash(usePhi2);
                 }
@@ -5063,14 +5038,9 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                     std::pair<std::multimap<uint256, CDiskBlockPos>::iterator, std::multimap<uint256, CDiskBlockPos>::iterator> range = mapBlocksUnknownParent.equal_range(head);
                     while (range.first != range.second) {
                         std::multimap<uint256, CDiskBlockPos>::iterator it = range.first;
-
-                        BlockMap::iterator prev_block_it = mapBlockIndex.find(block.hashPrevBlock);
-                        bool usePhi2 = false;
-                        if (prev_block_it != mapBlockIndex.end()) {
-                            usePhi2 = prev_block_it->second->nHeight >= Params().SwitchPhi2Block();
-                        }
-
-                        uint256 hash = block.GetHash(usePhi2);
+                        pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+                        usePhi2 = pindexPrev ? pindexPrev->nHeight + 1 >= Params().SwitchPhi2Block() : false;
+                        hash = block.GetHash(usePhi2);
                         int nHeight = mapBlockIndex[hash]->nHeight;
                         if (ReadBlockFromDisk(block, it->second, nHeight, chainparams.GetConsensus())) {
                             LogPrintf("%s: Processing out of order child %s of %s\n", __func__, block.GetHash(usePhi2).ToString(),
@@ -5387,25 +5357,25 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
 
             if (inv.type == MSG_BLOCK || inv.type == MSG_FILTERED_BLOCK || inv.type == MSG_WITNESS_BLOCK) {
                 bool send = false;
-                BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
-                if (mi != mapBlockIndex.end()) {
-                    if (chainActive.Contains(mi->second)) {
+                CBlockIndex* pindex = LookupBlockIndex(inv.hash);
+                if (pindex) {
+                    if (chainActive.Contains(pindex)) {
                         send = true;
                     } else {
                         // To prevent fingerprinting attacks, only send blocks outside of the active
                         // chain if they are valid, and no more than a max reorg depth than the best header
                         // chain we know about.
-                        send = mi->second->IsValid(BLOCK_VALID_SCRIPTS) && (pindexBestHeader != NULL) &&
-                               (chainActive.Height() - mi->second->nHeight < Params().MaxReorganizationDepth());
+                        send = pindex->IsValid(BLOCK_VALID_SCRIPTS) && (pindexBestHeader != NULL) &&
+                               (chainActive.Height() - pindex->nHeight < Params().MaxReorganizationDepth());
                         if (!send) {
                             LogPrintf("ProcessGetData(): ignoring request from peer=%i for old block that isn't in the main chain\n", pfrom->GetId());
                         }
                     }
                 }
-                if (send && (mi->second->nStatus & BLOCK_HAVE_DATA)) {
+                if (send && pindex && (pindex->nStatus & BLOCK_HAVE_DATA)) {
                     // Send block from disk
                     CBlock block;
-                    if (!ReadBlockFromDisk(block, (*mi).second, consensusParams))
+                    if (!ReadBlockFromDisk(block, pindex, consensusParams))
                         assert(!"cannot load block from disk");
                     if (inv.type == MSG_BLOCK)
                         pfrom->PushMessage("block", block); //TODO: push message with flag NO_WITNESS
@@ -5873,10 +5843,9 @@ static bool ProcessMessage(CNode* pfrom, const string &strCommand, CDataStream& 
         CBlockIndex* pindex = NULL;
         if (locator.IsNull()) {
             // If locator is null, return the hashStop block
-            BlockMap::iterator mi = mapBlockIndex.find(hashStop);
-            if (mi == mapBlockIndex.end())
+            pindex = LookupBlockIndex(hashStop);
+            if (!pindex)
                 return true;
-            pindex = (*mi).second;
         } else {
             // Find the last block the caller has in the main chain
             pindex = FindForkInGlobalIndex(chainActive, locator);
@@ -6078,11 +6047,8 @@ static bool ProcessMessage(CNode* pfrom, const string &strCommand, CDataStream& 
         CBlock block;
         vRecv >> block;
 
-        BlockMap::iterator prev_block_it = mapBlockIndex.find(block.hashPrevBlock);
-        bool usePhi2 = false;
-        if (prev_block_it != mapBlockIndex.end()) {
-            usePhi2 = prev_block_it->second->nHeight + 1 >= Params().SwitchPhi2Block();
-        }
+        CBlockIndex* pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+        bool usePhi2 = pindexPrev ? pindexPrev->nHeight + 1 >= Params().SwitchPhi2Block() : false;
 
         uint256 hashBlock = block.GetHash(usePhi2);
         CInv inv(MSG_BLOCK, hashBlock);
@@ -6895,11 +6861,8 @@ UniValue vmLogToJSON(const ResultExecute& execRes, const CTransaction& tx, const
         result.push_back(Pair("txid", tx.GetHash().GetHex()));
     result.push_back(Pair("address", execRes.execRes.newAddress.hex()));
 
-    BlockMap::iterator prev_block_it = mapBlockIndex.find(block.hashPrevBlock);
-    bool usePhi2 = false;
-    if (prev_block_it != mapBlockIndex.end()) {
-        usePhi2 = prev_block_it->second->nHeight + 1 >= Params().SwitchPhi2Block();
-    }
+    CBlockIndex* pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+    bool usePhi2 = pindexPrev ? pindexPrev->nHeight + 1 >= Params().SwitchPhi2Block() : false;
 
     if(block.GetHash(usePhi2) != CBlock().GetHash(usePhi2)){
         result.push_back(Pair("time", block.GetBlockTime()));
