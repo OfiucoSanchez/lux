@@ -727,6 +727,10 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn, bool fFromLoadWallet, bool fFl
                 wtx = wtxIn;
                 fUpdated = true;
             }
+            if(fUpdated && wtx.IsCoinStake())
+            {
+                AddToSpends(hash);
+            }
         }
 
         //// debug print
@@ -989,7 +993,7 @@ int CWalletTx::GetRequestCount() const
     int nRequests = -1;
     {
         LOCK(pwallet->cs_wallet);
-        if (IsCoinBase()) {
+        if (IsCoinBase() || IsCoinStake()) {
             // Generated block
             if (hashBlock != 0) {
                 map<uint256, int>::const_iterator mi = pwallet->mapRequestCount.find(hashBlock);
@@ -1157,7 +1161,7 @@ void CWallet::ReacceptWalletTransactions()
 
         int nDepth = wtx.GetDepthInMainChain();
 
-        if (!wtx.IsCoinBase() && nDepth < 0 && !wtx.IsCoinStake()) {
+        if (!wtx.IsCoinBase() && (nDepth == 0 && !wtx.IsCoinStake())) {
             mapSorted.insert(std::make_pair(wtx.nOrderPos, &wtx));
         }
     }
@@ -1533,9 +1537,8 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const
             if ((pcoin->IsCoinBase() || pcoin->IsCoinStake()) && pcoin->GetBlocksToMaturity() > 0)
                 continue;
 
-            const int nDepth = pcoin->GetDepthInMainChain(false);
-            // do not use IX for inputs that have less then 6 blockchain confirmations
-            if (fUseIX && nDepth < 6)
+            const int nDepth = pcoin->GetDepthInMainChain();
+            if (nDepth <= 0) // LuxNOTE: coincontrol fix / ignore 0 confirm
                 continue;
 
             // We should not consider coins which aren't at least in our mempool
@@ -1590,11 +1593,11 @@ void CWallet::AvailableCoinsMN(vector<COutput>& vCoins, bool fOnlyConfirmed, con
             if (fOnlyConfirmed && !pcoin->IsTrusted())
                 continue;
 
-            if (pcoin->IsCoinBase() && pcoin->GetBlocksToMaturity() > 0)
+            if ((pcoin->IsCoinBase() || pcoin->IsCoinStake()) && pcoin->GetBlocksToMaturity() > 0)
                 continue;
 
-            if (pcoin->IsCoinStake() && pcoin->GetBlocksToMaturity() > 0)
-                continue;
+           // if (pcoin->IsCoinStake() && pcoin->GetBlocksToMaturity() > 0)
+             //   continue;
 
             const int nDepth = pcoin->GetDepthInMainChain();
             if (nDepth <= 0) // LuxNOTE: coincontrol fix / ignore 0 confirm
@@ -2948,13 +2951,13 @@ std::map<CTxDestination, CAmount> CWallet::GetAddressBalances()
 
     {
         LOCK(cs_wallet);
-        BOOST_FOREACH (PAIRTYPE(uint256, CWalletTx) walletEntry, mapWallet) {
-            CWalletTx* pcoin = &walletEntry.second;
+        for (const auto& walletEntry : mapWallet) {
+          const CWalletTx* pcoin = &walletEntry.second;
 
             if (!IsFinalTx(*pcoin) || !pcoin->IsTrusted())
                 continue;
 
-            if (pcoin->IsCoinBase() && pcoin->GetBlocksToMaturity() > 0)
+            if ((pcoin->IsCoinBase() || pcoin->IsCoinStake()) && pcoin->GetBlocksToMaturity() > 0)
                 continue;
 
             int nDepth = pcoin->GetDepthInMainChain();
@@ -2986,8 +2989,8 @@ set<set<CTxDestination> > CWallet::GetAddressGroupings()
     set<set<CTxDestination> > groupings;
     set<CTxDestination> grouping;
 
-    BOOST_FOREACH (PAIRTYPE(uint256, CWalletTx) walletEntry, mapWallet) {
-        CWalletTx* pcoin = &walletEntry.second;
+    for (const auto& walletEntry : mapWallet) {
+      const CWalletTx* pcoin = &walletEntry.second;
 
         if (pcoin->vin.size() > 0) {
             bool any_mine = false;
