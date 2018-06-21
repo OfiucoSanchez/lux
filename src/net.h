@@ -240,13 +240,11 @@ public:
     uint64_t nSendBytes;
     std::deque<CSerializeData> vSendMsg;
     CCriticalSection cs_vSend;
-
     std::deque<CInv> vRecvGetData;
     std::deque<CNetMessage> vRecvMsg;
     CCriticalSection cs_vRecvMsg;
     uint64_t nRecvBytes;
     int nRecvVersion;
-
     int64_t nLastSend;
     int64_t nLastRecv;
     int64_t nTimeConnected;
@@ -311,7 +309,7 @@ public:
     std::set<uint256> setKnown;
 
     // inventory based relay
-    mruset<CInv> setInventoryKnown;
+    CRollingBloomFilter setInventoryKnown;
     std::vector<CInv> vInventoryToSend;
     CCriticalSection cs_inventory;
     std::multimap<int64_t, CInv> mapAskFor;
@@ -412,7 +410,7 @@ public:
     {
         {
             LOCK(cs_inventory);
-            setInventoryKnown.insert(inv);
+            setInventoryKnown.insert(inv.hash);
         }
     }
 
@@ -420,7 +418,7 @@ public:
     {
         {
             LOCK(cs_inventory);
-            if (!setInventoryKnown.count(inv))
+            if (!setInventoryKnown.contains(inv.hash))
                 vInventoryToSend.push_back(inv);
         }
     }

@@ -5455,7 +5455,6 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                             // however we MUST always provide at least what the remote peer needs
                             typedef std::pair<unsigned int, uint256> PairType;
                             BOOST_FOREACH (PairType& pair, merkleBlock.vMatchedTxn)
-                                if (!pfrom->setInventoryKnown.count(CInv(MSG_TX, pair.second)))
                                     pfrom->PushMessage("tx", block.vtx[pair.first]); //TODO: push message with flag NO_WITNESS
                         }
                         // else
@@ -6351,7 +6350,7 @@ static bool ProcessMessage(CNode* pfrom, const string &strCommand, CDataStream& 
             LOCK(pfrom->cs_filter);
             delete pfrom->pfilter;
             pfrom->pfilter = new CBloomFilter(filter);
-            pfrom->pfilter->UpdateEmptyFull();
+            filter.UpdateEmptyFull();
         }
         pfrom->fRelayTxes = true;
     }
@@ -6687,7 +6686,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
             vInv.reserve(pto->vInventoryToSend.size());
             vInvWait.reserve(pto->vInventoryToSend.size());
             BOOST_FOREACH (const CInv& inv, pto->vInventoryToSend) {
-                if (pto->setInventoryKnown.count(inv))
+                if (pto->setInventoryKnown.contains(inv.hash))
                     continue;
 
                 // trickle out tx inv to protect privacy
@@ -6707,7 +6706,8 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                 }
 
                 // returns true if wasn't already contained in the set
-                if (pto->setInventoryKnown.insert(inv).second) {
+                if (!pto->setInventoryKnown.contains(inv.hash)) {
+                    pto->setInventoryKnown.insert(inv.hash);
                     vInv.push_back(inv);
                     if (vInv.size() >= 1000) {
                         pto->PushMessage("inv", vInv);

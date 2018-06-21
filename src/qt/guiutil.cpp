@@ -935,6 +935,9 @@ QString formatServicesStr(quint64 mask)
             case NODE_WITNESS:
                 strList.append(QObject::tr("WITNESS"));
                 break;
+            case NODE_BLOOM:
+                    strList.append("BLOOM");
+                 break;
             default:
                 strList.append(QString("%1[%2]").arg(QObject::tr("UNKNOWN")).arg(check));
             }

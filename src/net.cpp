@@ -22,6 +22,7 @@
 #include "wallet.h"
 #include "miner.h"
 #include "stake.h"
+#include "bloom.h"
 
 #ifdef WIN32
 #include <string.h>
@@ -2055,7 +2056,7 @@ CNode::CNode(SOCKET hSocketIn, CAddress addrIn, std::string addrNameIn, bool fIn
     nStartingHeight = -1;
     fGetAddr = false;
     fRelayTxes = false;
-    setInventoryKnown.max_size(SendBufferSize() / 1000);
+    setInventoryKnown.reset();
     pfilter = new CBloomFilter();
     nPingNonceSent = 0;
     nPingUsecStart = 0;

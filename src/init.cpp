@@ -381,6 +381,10 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += "  -onion=<ip:port>       " + strprintf(_("Use separate SOCKS5 proxy to reach peers via Tor hidden services (default: %s)"), "-proxy") + "\n";
     strUsage += "  -onlynet=<net>         " + _("Only connect to nodes in network <net> (ipv4, ipv6 or onion)") + "\n";
     strUsage += "  -permitbaremultisig    " + strprintf(_("Relay non-P2SH multisig (default: %u)"), 1) + "\n";
+
+    strUsage += "  -peerbloomfilters      " + strprintf(_("Support filtering of blocks and transaction with bloom filters (default: %u)"), 1) + "\n";
+    strUsage += "  -enforcenodebloom      " + strprintf(_("Enforce minimum protocol version to limit use of bloom filters (default: %u)"), 0) + "\n";
+
     strUsage += "  -port=<port>           " +
                 strprintf(_("Listen for connections on <port> (default: %u or testnet: %u)"), 26868, 26867) + "\n";
     strUsage += "  -proxy=<ip:port>       " + _("Connect through SOCKS5 proxy") + "\n";
