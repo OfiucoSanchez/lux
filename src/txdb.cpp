@@ -275,10 +275,15 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
 
                 bool isPoW = (diskindex.nNonce != 0) && pindexNew->nHeight <= Params().LAST_POW_BLOCK();
                 if (isPoW) {
-                    auto const &hash(pindexNew->GetBlockHash());
-                    if (!CheckProofOfWork(hash, pindexNew->nBits, Params().GetConsensus())) {
+                    CBlock block;
+                    if(!ReadBlockFromDisk(block, pindexNew, Params().GetConsensus()))
+                    {
+                        return error("%s: *** ReadBlockFromDisk failed at %d, hash=%s", __func__, pindexNew->nHeight, pindexNew->GetBlockHash().GetHex());
+                    }
+
+                    if (!CheckProofOfWork(block, Params().GetConsensus())) {
                         unsigned int nBits = pindexPrev ? pindexPrev->nBits : 0;
-                        return error("%s: CheckProofOfWork failed: %d %s (%d, %d)", __func__, pindexNew->nHeight, hash.GetHex(), pindexNew->nBits, nBits);
+                        return error("%s: CheckProofOfWork failed: %d %s (%d, %d)", __func__, pindexNew->nHeight, pindexNew->GetBlockHash().GetHex(), pindexNew->nBits, nBits);
                     }
                 } else {
                     stake->MarkStake(pindexNew->prevoutStake, pindexNew->nStakeTime);

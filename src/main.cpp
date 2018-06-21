@@ -1738,7 +1738,7 @@ bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, int nHeight, con
 
     // Check the header
     if (block.IsProofOfWork()) {
-        if (!CheckProofOfWork(block.GetHash(nHeight >= Params().SwitchPhi2Block()), block.nBits, consensusParams))
+        if (!CheckProofOfWork(block, consensusParams))
             return error("ReadBlockFromDisk : Errors in block header");
     } else {
         uint256 hashProofOfStake;
@@ -3761,17 +3761,9 @@ static CDiskBlockPos SaveBlockToDisk(CValidationState& state, const CBlock& bloc
     return blockPos;
 }
 
-bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW) {
-    // Get prev block index
-    bool usePhi2 = false;
-    int nBlockHeight = 0;
-    CBlockIndex* pindexPrev = LookupBlockIndex(block.hashPrevBlock);
-    if (pindexPrev) {
-        usePhi2 = pindexPrev->nHeight + 1 >= Params().SwitchPhi2Block();
-    }
-
+bool CheckBlockHeader(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW) {
     // Check proof of work matches claimed amount
-    if (fCheckPOW && !CheckProofOfWork(block.GetHash(usePhi2), block.nBits, consensusParams))
+    if (fCheckPOW && !CheckProofOfWork(block, consensusParams))
         return state.DoS(50, error("%s: proof of work failed", __func__),
             REJECT_INVALID, "high-hash");
     return true;

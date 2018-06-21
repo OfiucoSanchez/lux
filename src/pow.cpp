@@ -60,7 +60,7 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 }
 
 /** Check whether a block hash satisfies the proof-of-work requirement specified by nBits */
-bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params& consensusParams)
+bool CheckProofOfWork(CBlock block, const Consensus::Params& consensusParams)
 {
     bool fNegative;
     bool fOverflow;
@@ -69,15 +69,49 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&
     if (Params().SkipProofOfWorkCheck())
         return true;
 
-    bnTarget.SetCompact(nBits, &fNegative, &fOverflow);
+    bnTarget.SetCompact(block.nBits, &fNegative, &fOverflow);
 
     // Check range
     if (fNegative || bnTarget == 0 || fOverflow || bnTarget > Params().ProofOfWorkLimit())
         return false; //error("CheckProofOfWork() : nBits below minimum work");
 
+    // Get prev block index
+    bool usePhi2 = false;
+    int height = 0;
+    CBlockIndex* pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+    if (!pindexPrev)
+    {
+        return false;
+    }
+
+    height = pindexPrev->nHeight + 1;
+    usePhi2 = (height >= Params().SwitchPhi2Block());
+
+    uint256 hash = block.GetHash(usePhi2);
     // Check proof of work matches claimed amount
     if (hash > bnTarget)
         return false; //error("CheckProofOfWork() : hash doesn't match nBits");
+
+
+    if (height >= Params().FirstSplitRewardBlock())
+    {
+        CMutableTransaction coinbaseTx = CMutableTransaction(block.vtx[0]);
+
+        // Check the output size
+        if (coinbaseTx.vout.size() != 2)
+        {
+            return false;
+        }
+
+        // Check master node reward
+        CAmount totalReward = GetProofOfWorkReward(0, height);
+        CAmount mnReward = totalReward * 0.2;
+
+        if (coinbaseTx.vout[1].nValue != mnReward)
+        {
+            return false;
+        }
+    }
 
     return true;
 }
