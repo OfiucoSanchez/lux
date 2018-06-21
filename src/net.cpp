@@ -402,10 +402,8 @@ CNode* ConnectNode(CAddress addrConnect, const char* pszDest, bool darkSendMaste
         // Look for an existing connection
         CNode* pnode = FindNode((CService)addrConnect);
         if (pnode) {
-            pnode->fDarkSendMaster = darkSendMaster;
-
-            pnode->AddRef();
-            return pnode;
+            LogPrintf("Failed to open connection to %s, already connected\n", addrConnect.ToString());
+            return NULL;
         }
     }
 
@@ -425,20 +423,37 @@ CNode* ConnectNode(CAddress addrConnect, const char* pszDest, bool darkSendMaste
             return NULL;
         }
 
+        if (pszDest && addrConnect.IsValid()) {
+            // It is possible that we already have a connection to the IP/port pszDest resolved to.
+            // In that case, drop the connection that was just created, and return the existing CNode instead.
+            // Also store the name we used to connect in that CNode, so that future FindNode() calls to that
+            // name catch this early.
+            LOCK(cs_vNodes);
+            CNode* pnode = FindNode((CService)addrConnect);
+            if (pnode)
+            {
+		if (pnode->addrName.empty()) pnode->addrName = pszDest;
+
+                CloseSocket(hSocket);
+                LogPrintf("Failed to open new connection, already connected\n");
+                return NULL;
+            }
+        }
+
         addrman.Attempt(addrConnect);
 
         // Add node
         CNode* pnode = new CNode(hSocket, addrConnect, pszDest ? pszDest : "", false);
-        pnode->AddRef();
+        pnode->nServicesExpected = ServiceFlags(addrConnect.nServices & nRelevantServices);
+        pnode->nTimeConnected = GetTime();
 
+        if (darkSendMaster) pnode->fDarkSendMaster = true;
+
+        pnode->AddRef();
         {
             LOCK(cs_vNodes);
             vNodes.push_back(pnode);
         }
-
-        pnode->nServicesExpected = ServiceFlags(addrConnect.nServices & nRelevantServices);
-        pnode->nTimeConnected = GetTime();
-        if (darkSendMaster) pnode->fDarkSendMaster = true;
 
         return pnode;
     } else if (!proxyConnectionFailed) {
