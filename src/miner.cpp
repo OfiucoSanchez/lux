@@ -289,7 +289,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
         assert(coinbaseTx.vin[0].scriptSig.size() <= 100);
         coinbaseTx.vout[0].SetEmpty();
     } else {
-        CAmount totalReward = GetProofOfWorkReward(nFees, nHeight);
+        CAmount totalReward = GetProofOfWorkReward(0, nHeight);
         CAmount minerReward = 0;
         CAmount mnReward = 0;
         CScript mnPayee;
@@ -306,9 +306,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
             LogPrintf("%s: Masternode payment to %s (pow)\n", __func__, EncodeDestination(txDest));
 
             //miner's reward is everything that left after possibly inaccurate division
-            minerReward = totalReward - mnReward;
+            minerReward = totalReward + nFees - mnReward;
         } else {
-            minerReward = totalReward;
+            minerReward = totalReward + nFees;
         }
         assert(minerReward + mnReward == totalReward);
 
