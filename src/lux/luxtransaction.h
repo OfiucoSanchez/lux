@@ -78,7 +78,7 @@ struct UniversalAddress{
         return version == a.version && data == a.data;
     }
     bool operator!=(const UniversalAddress& a) const{
-        return version != a.version || data != a.data;
+        return !(a == *this);
     }
 
     static UniversalAddress FromScript(const CScript& script);
