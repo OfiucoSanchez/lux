@@ -393,12 +393,11 @@ static bool int64AddWillOverflow(int64_t a, int64_t b){
     return a > 0 && (b < INT64_MAX - a);
 }
 
-CTransaction AccountAbstractionLayer::createCondensingTx(bool &voutsBeyondMax) {
+bool AccountAbstractionLayer::calculateBalances() {
     //calculate what the balance should be
     std::set<UniversalAddress> balanceNotLoaded;
 
     //requiredVins contains only 1 record per address. note: sort order is consensus-critical
-    bool spendSender=false;
 
     for(auto &t : transfers){
         if(balances.count(t.to) == 0){
@@ -408,7 +407,7 @@ CTransaction AccountAbstractionLayer::createCondensingTx(bool &voutsBeyondMax) {
         if(balanceNotLoaded.count(t.from)){
             if(int64AddWillOverflow(balances[t.from], t.fromVin.value)) {
                 LogPrintf("Account balance load would cause overflow!");
-                return CTransaction();
+                return false;
             }
             balances[t.from] += t.fromVin.value;
             balanceNotLoaded.erase(t.from);
@@ -418,18 +417,19 @@ CTransaction AccountAbstractionLayer::createCondensingTx(bool &voutsBeyondMax) {
         }
         if(int64AddWillOverflow(t.value, balances[t.to])){
             LogPrintf("Account balance change would cause overflow!");
-            return CTransaction();
+            return false;
         }
         balances[t.to] += t.value;
         if(balances[t.from] < t.value){
             LogPrintf("Account balance change would cause underflow!");
-            return CTransaction();
+            return false;
         }
         balances[t.from] -= t.value;
     }
+    return true;
+}
 
-    //select vins to spend
-    //map isn't particularly necessary, but the sort order is
+std::map<UniversalAddress, AccountVin> AccountAbstractionLayer::selectVins() {
     std::map<UniversalAddress, AccountVin> requiredVins;
     for(auto &t : transfers){
         if(!requiredVins.count(t.from)){
@@ -444,6 +444,18 @@ CTransaction AccountAbstractionLayer::createCondensingTx(bool &voutsBeyondMax) {
             }
         }
     }
+    return requiredVins;
+}
+
+CTransaction AccountAbstractionLayer::createCondensingTx(bool &voutsBeyondMax) {
+
+    if(!calculateBalances()){
+        return CTransaction();
+    }
+
+    //note: vout and vin order are consensus-critical!
+    //map isn't particularly necessary, but the sort order is
+    std::map<UniversalAddress, AccountVin> requiredVins = selectVins();
 
     CMutableTransaction tx;
     //generate vins
@@ -463,8 +475,6 @@ CTransaction AccountAbstractionLayer::createCondensingTx(bool &voutsBeyondMax) {
      }
 
     //generate vouts
-    //note: vout and vin order are consensus-critical!
-    //
     for(auto &balance : balances){
         if(balance.second == 0){
             continue;
