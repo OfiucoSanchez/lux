@@ -8,6 +8,7 @@
 #include "allocators.h"
 #include "keystore.h"
 #include "serialize.h"
+#include "support/allocators/secure.h"
 
 class uint256;
 
@@ -122,6 +123,7 @@ class CCryptoKeyStore : public CBasicKeyStore
 {
 private:
     CryptedKeyMap mapCryptedKeys;
+    CHDChain cryptedHDChain;
 
     CKeyingMaterial vMasterKey;
 
@@ -137,6 +139,11 @@ protected:
 
     //! will encrypt previously unencrypted keys
     bool EncryptKeys(CKeyingMaterial& vMasterKeyIn);
+
+    bool EncryptHDChain(const CKeyingMaterial& vMasterKeyIn);
+    bool DecryptHDChain(CHDChain& hdChainRet) const;
+    bool SetHDChain(const CHDChain& chain);
+    bool SetCryptedHDChain(const CHDChain& chain);
 
     bool Unlock(const CKeyingMaterial& vMasterKeyIn);
 
@@ -155,6 +162,8 @@ public:
     bool GetKey(const CKeyID& address, CKey& keyOut) const override;
     bool GetPubKey(const CKeyID& address, CPubKey& vchPubKeyOut) const override;
     std::set<CKeyID> GetKeys() const override;
+
+    bool GetHDChain(CHDChain& hdChainRet) const;
 
     /**
      * Wallet status (encrypted, locked) changed.

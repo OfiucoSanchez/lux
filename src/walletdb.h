@@ -7,7 +7,8 @@
 #define BITCOIN_WALLETDB_H
 
 #include "amount.h"
-#include "db.h"
+#include "walletdb.h"
+#include "hdchain.h"
 #include "key.h"
 #include "keystore.h"
 
@@ -55,7 +56,7 @@ public:
     }
     CKeyMetadata(int64_t nCreateTime_)
     {
-        nVersion = CKeyMetadata::CURRENT_VERSION;
+        SetNull();
         nCreateTime = nCreateTime_;
     }
 
@@ -187,6 +188,11 @@ public:
     static bool Recover(CDBEnv& dbenv, std::string filename, bool fOnlyKeys);
     static bool Recover(CDBEnv& dbenv, std::string filename);
     static unsigned int GetUpdateCounter();
+
+    //! write the hdchain model (external chain child index counter)
+    bool WriteHDChain(const CHDChain& chain);
+    bool WriteCryptedHDChain(const CHDChain& chain);
+    bool WriteHDPubKey(const CHDPubKey& hdPubKey, const CKeyMetadata& keyMeta);
 private:
     CWalletDB(const CWalletDB&);
     void operator=(const CWalletDB&);
@@ -199,5 +205,7 @@ bool BackupWallet(const CWallet& wallet, const std::string& strDest);
 void MaybeFlushWalletDB();
 
 void ThreadFlushWalletDB(const std::string& strFile);
+
+bool AutoBackupWallet (CWallet* wallet, std::string strWalletFile, std::string& strBackupWarning, std::string& strBackupError);
 
 #endif // BITCOIN_WALLETDB_H

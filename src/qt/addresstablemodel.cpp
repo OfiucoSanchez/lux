@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2014 The Bitcoin developers
-// Copyright (c) 2014-2015 The Dash developers
+// Copyright (c) 2014-2015 The Lux developers
 // Copyright (c) 2015-2017 The LUX developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -333,14 +333,17 @@ QString AddressTableModel::addRow(const QString& type, const QString& label, con
     } else if (type == Receive) {
         // Generate a new address to associate with given label
         CPubKey newKey;
-        if (!wallet->GetKeyFromPool(newKey)) {
-            WalletModel::UnlockContext ctx(walletModel->requestUnlock(true));
-            if (!ctx.isValid()) {
+        if(!wallet->GetKeyFromPool(newKey, false))
+        {
+            WalletModel::UnlockContext ctx(walletModel->requestUnlock());
+            if(!ctx.isValid())
+            {
                 // Unlock wallet failed or was cancelled
                 editStatus = WALLET_UNLOCK_FAILURE;
                 return QString();
             }
-            if (!wallet->GetKeyFromPool(newKey)) {
+            if(!wallet->GetKeyFromPool(newKey, false))
+            {
                 editStatus = KEY_GENERATION_FAILURE;
                 return QString();
             }

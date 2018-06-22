@@ -1,6 +1,6 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin developers
-// Copyright (c) 2014-2015 The Dash developers
+// Copyright (c) 2014-2015 The Lux developers
 // Copyright (c) 2015-2017 The LUX developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -363,7 +363,8 @@ static const CRPCCommand vRPCCommands[] =
         {"wallet", "autocombinerewards", &autocombinerewards, false, false, true},
         {"wallet", "backupwallet", &backupwallet, true, false, true},
         {"wallet", "dumpprivkey", &dumpprivkey, true, false, true},
-        {"wallet", "dumpwallet", &dumpwallet, true, false, true},
+        {"wallet", "dumpinfo", &dumpinfo, true, false, true},
+        {"wallet", "bip38encrypt", &bip38encrypt, true, false, true},
         {"wallet", "bip38encrypt", &bip38encrypt, true, false, true},
         {"wallet", "bip38decrypt", &bip38decrypt, true, false, true},
         {"wallet", "encryptwallet", &encryptwallet, true, false, true},

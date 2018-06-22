@@ -23,7 +23,7 @@ bool ShutdownRequested();
 void Shutdown();
 void PrepareShutdown();
 bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler);
-
+void InitParameterInteraction();
 /** The help message mode determines what help message to show */
 enum HelpMessageMode {
     HMM_BITCOIND,

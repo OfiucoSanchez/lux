@@ -10,6 +10,7 @@
 #include "script/script.h"
 #include "script/standard.h"
 #include "util.h"
+#include "pubkey.h"
 
 #include <boost/foreach.hpp>
 
@@ -172,6 +173,12 @@ bool CBasicKeyStore::HaveWatchOnly() const
 {
     LOCK(cs_KeyStore);
     return (!setWatchOnly.empty());
+}
+
+bool CBasicKeyStore::GetHDChain(CHDChain& hdChainRet) const
+{
+    hdChainRet = hdChain;
+    return !hdChain.IsNull();
 }
 
 CKeyID GetKeyForDestination(const CKeyStore& store, const CTxDestination& dest)

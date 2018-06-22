@@ -1675,7 +1675,7 @@ bool CDarkSendPool::SendRandomPaymentToSelf()
 
     CScript scriptChange;
     CPubKey vchPubKey;
-    assert(reservekey.GetReservedKey(vchPubKey)); // should never fail, as we just unlocked
+    assert(reservekey.GetReservedKey(vchPubKey, false)); // should never fail, as we just unlocked
     scriptChange= GetScriptForDestination(vchPubKey.GetID());
 
     CWalletTx wtx;
@@ -1710,7 +1710,7 @@ bool CDarkSendPool::MakeCollateralAmounts()
 
     CScript scriptChange;
     CPubKey vchPubKey;
-    assert(reservekey.GetReservedKey(vchPubKey)); // should never fail, as we just unlocked
+    assert(reservekey.GetReservedKey(vchPubKey, false)); // should never fail, as we just unlocked
     scriptChange= GetScriptForDestination(vchPubKey.GetID());
 
     CWalletTx wtx;
@@ -1754,7 +1754,7 @@ bool CDarkSendPool::CreateDenominated(int64_t nTotalValue)
 
     CScript scriptChange;
     CPubKey vchPubKey;
-    assert(reservekey.GetReservedKey(vchPubKey)); // should never fail, as we just unlocked
+    assert(reservekey.GetReservedKey(vchPubKey, false)); // should never fail, as we just unlocked
     scriptChange= GetScriptForDestination(vchPubKey.GetID());
 
     CWalletTx wtx;
@@ -1778,10 +1778,10 @@ bool CDarkSendPool::CreateDenominated(int64_t nTotalValue)
         // add each output up to 10 times until it can't be added again
         while(nValueLeft - v >= DARKSEND_FEE && nOutputs <= 10) {
             CScript scriptChange;
-            CPubKey vchPubKey;
-            //use a unique change address
-            assert(reservekey.GetReservedKey(vchPubKey)); // should never fail, as we just unlocked
-            scriptChange= GetScriptForDestination(vchPubKey.GetID());
+            CScript scriptDenom;
+            // use unique address
+            assert(reservekey.GetReservedKey(vchPubKey, false)); // should never fail, as we just unlocked
+            scriptDenom = GetScriptForDestination(vchPubKey.GetID());
             reservekey.KeepKey();
 
             vecSend.push_back(make_pair(scriptChange, v));

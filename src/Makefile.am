@@ -86,8 +86,8 @@ BITCOIN_CORE_H = \
   allocators.h \
   amount.h \
   base58.h \
-  bech32.h \
-  bip38.h \
+  bip39.h \
+  bip39_english.h \
   bloom.h \
   chain.h \
   chainparams.h \
@@ -111,6 +111,7 @@ BITCOIN_CORE_H = \
   eccryptoverify.h \
   ecwrapper.h \
   hash.h \
+  hdchain.h \
   indirectmap.h \
   init.h \
   instantx.h \
@@ -157,6 +158,10 @@ BITCOIN_CORE_H = \
   spork.h \
   stake.h \
   streams.h \
+  support/allocators/secure.h \
+  support/allocators/zeroafterfree.h \
+  support/cleanse.h \
+  support/pagelocker.h \
   sync.h \
   threadsafety.h \
   timedata.h \
@@ -387,6 +392,7 @@ libbitcoin_common_a_SOURCES = \
   base58.cpp \
   bech32.cpp \
   bip38.cpp \
+  bip39.cpp \
   chainparams.cpp \
   coins.cpp \
   compressor.cpp \
@@ -397,6 +403,7 @@ libbitcoin_common_a_SOURCES = \
   eccryptoverify.cpp \
   ecwrapper.cpp \
   hash.cpp \
+  hdchain.cpp \
   key.cpp \
   keystore.cpp \
   netbase.cpp \
@@ -594,6 +601,8 @@ endif
 # backward-compatibility objects and their sanity checks are linked.
 libbitcoin_util_a_CPPFLAGS = $(BITCOIN_INCLUDES)
 libbitcoin_util_a_SOURCES = \
+ support/pagelocker.cpp \
+ support/cleanse.cpp \
   allocators.cpp \
   compat/strnlen.cpp \
   compat/glibc_sanity.cpp \
@@ -719,6 +728,7 @@ CLEANFILES += compat/*.gcda compat/*.gcno
 CLEANFILES += crypto/*.gcda crypto/*.gcno
 CLEANFILES += primitives/*.gcda primitives/*.gcno
 CLEANFILES += script/*.gcda script/*.gcno
+CLEANFILES += support/*.gcda support/*.gcno
 CLEANFILES += univalue/*.gcda univalue/*.gcno
 CLEANFILES += zmq/*.gcda zmq/*.gcno
 
