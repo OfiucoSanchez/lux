@@ -75,6 +75,7 @@ class CConnman;
 class CScriptCheck;
 class CValidationInterface;
 class CValidationState;
+struct CDiskTxPos;
 
 struct CBlockTemplate;
 struct CNodeStateStats;
@@ -425,6 +426,9 @@ struct CHeightTxIndexKey {
 };
 
 ////////////////////////////////////////////////////////////
+
+/** Check if the transaction is confirmed in previous blocks */
+bool TXConfirmedInPrevBlocks(const CDiskTxPos& txindex, const CBlockIndex* pindexFrom, int nMaxDepth, int& nActualDepth);
 
 int GetInputAge(CTxIn& vin);
 int GetInputAgeIX(uint256 nTXHash, CTxIn& vin);

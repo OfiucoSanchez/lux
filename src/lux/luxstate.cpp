@@ -84,15 +84,19 @@ ResultExecute LuxState::execute(EnvInfo const& _envInfo, SealEngineFace const& _
             commit(removeEmptyAccounts ? State::CommitBehaviour::RemoveEmptyAccounts : State::CommitBehaviour::KeepEmptyAccounts);
         }
     }
-    catch(Exception const& _e){
+    catch(Exception const& _e) {
 
         printfErrorLog(dev::eth::toTransactionException(_e));
         res.excepted = dev::eth::toTransactionException(_e);
         res.gasUsed = _t.gas();
-        m_cache.clear();
-        cacheUTXO.clear();
+        if (_p != Permanence::Reverted) {
+            deleteAccounts(_sealEngine.deleteAddresses);
+            commit(CommitBehaviour::RemoveEmptyAccounts);
+        } else {
+            m_cache.clear();
+            cacheUTXO.clear();
+        }
     }
-
     if(!_t.isCreation())
         res.newAddress = _t.receiveAddress();
     newAddress = dev::Address();
