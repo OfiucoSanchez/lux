@@ -2585,6 +2585,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                 uint64_t gasFeeSum=0;
                 uint64_t gasLimitSum=0;
                 bool nonZeroVersion = false;
+#if 0
                 for(uint32_t nvout=0; i<tx.vout.size(); nvout++) {
                     ContractOutputParser parser(tx, nvout, &view, &block.vtx);
                     ContractOutput output;
@@ -2647,7 +2648,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                         return state.DoS(100, error("ConnectBlock(): Version 0 contract executions are not allowed unless created by the AAL "), REJECT_INVALID, "bad-tx-improper-version-0");
                     }
                 }
-
+#endif
                 LuxTxConverter convert(tx, &view, &block.vtx);
 
                 ExtractLuxTX resultConvertLuxTX;
