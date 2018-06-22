@@ -13,7 +13,6 @@
 #include "sync.h"
 #include "util.h"
 #include <libdevcore/CommonData.h>
-
 #include <stdint.h>
 
 #include "univalue/univalue.h"
@@ -69,8 +68,7 @@ CBlockIndex* GetLastBlockOfType(const int nPoS) // 0: PoW; 1: PoS
     return NULL;
 }
 
-UniValue blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool txDetails = false)
-{
+UniValue blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool txDetails = false) {
     UniValue result(UniValue::VOBJ);
     result.push_back(Pair("hash", block.GetHash(blockindex->nHeight >= Params().SwitchPhi2Block()).GetHex()));
     int confirmations = -1;
@@ -78,14 +76,15 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool tx
     if (chainActive.Contains(blockindex))
         confirmations = chainActive.Height() - blockindex->nHeight + 1;
     result.push_back(Pair("confirmations", confirmations));
-    result.push_back(Pair("size", (int)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
+    result.push_back(Pair("size", (int) ::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
     result.push_back(Pair("height", blockindex->nHeight));
     result.push_back(Pair("version", block.nVersion));
     result.push_back(Pair("merkleroot", block.hashMerkleRoot.GetHex()));
     result.push_back(Pair("stateroot", block.hashStateRoot.GetHex()));
     result.push_back(Pair("utxoroot", block.hashUTXORoot.GetHex()));
     UniValue txs(UniValue::VARR);
-    BOOST_FOREACH (const CTransaction& tx, block.vtx) {
+    BOOST_FOREACH(
+    const CTransaction &tx, block.vtx) {
         if (txDetails) {
             UniValue objTx(UniValue::VOBJ);
             TxToJSON(tx, uint256(), objTx);
@@ -95,21 +94,59 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool tx
     }
     result.push_back(Pair("tx", txs));
     result.push_back(Pair("time", block.GetBlockTime()));
-    result.push_back(Pair("nonce", (uint64_t)block.nNonce));
+    result.push_back(Pair("nonce", (uint64_t) block.nNonce));
     result.push_back(Pair("bits", strprintf("%08x", block.nBits)));
     result.push_back(Pair("difficulty", GetDifficulty(blockindex)));
-    result.push_back(Pair("flags", strprintf("%s%s", blockindex->IsProofOfStake()?"proof-of-stake":"proof-of-work", blockindex->GeneratedStakeModifier()?" stake-modifier":"")));
+    result.push_back(Pair("flags", strprintf("%s%s", blockindex->IsProofOfStake() ? "proof-of-stake" : "proof-of-work",
+                                             blockindex->GeneratedStakeModifier() ? " stake-modifier" : "")));
     result.push_back(Pair("chainwork", blockindex->nChainWork.GetHex()));
 
     if (blockindex->pprev)
         result.push_back(Pair("previousblockhash", blockindex->pprev->GetBlockHash().GetHex()));
-    CBlockIndex* pnext = chainActive.Next(blockindex);
+    CBlockIndex *pnext = chainActive.Next(blockindex);
     if (pnext)
         result.push_back(Pair("nextblockhash", pnext->GetBlockHash().GetHex()));
     return result;
 }
+#if 0
+//////////////////////////////////////////////////////////////////////////// // lux
+    UniValue executionResultToJSON(const dev::eth::ExecutionResult &exRes) {
+        UniValue result(UniValue::VOBJ);
+        result.push_back(Pair("gasUsed", CAmount(exRes.gasUsed)));
+        std::stringstream ss;
+        ss << exRes.excepted;
+        result.push_back(Pair("excepted", ss.str()));
+        result.push_back(Pair("newAddress", exRes.newAddress.hex()));
+        result.push_back(Pair("output", HexStr(exRes.output)));
+        result.push_back(Pair("codeDeposit", static_cast<int32_t>(exRes.codeDeposit)));
+        result.push_back(Pair("gasRefunded", CAmount(exRes.gasRefunded)));
+        result.push_back(Pair("depositSize", static_cast<int32_t>(exRes.depositSize)));
+        result.push_back(Pair("gasForDeposit", CAmount(exRes.gasForDeposit)));
+        return result;
+    }
 
-
+    UniValue transactionReceiptToJSON(const dev::eth::TransactionReceipt &txRec) {
+        UniValue result(UniValue::VOBJ);
+        result.push_back(Pair("stateRoot", txRec.stateRoot().hex()));
+        result.push_back(Pair("gasUsed", CAmount(txRec.gasUsed())));
+        result.push_back(Pair("bloom", txRec.bloom().hex()));
+        UniValue logEntries(UniValue::VARR);
+        dev::eth::LogEntries logs = txRec.log();
+        for (dev::eth::LogEntry log : logs) {
+            UniValue logEntrie(UniValue::VOBJ);
+            logEntrie.push_back(Pair("address", log.address.hex()));
+            UniValue topics(UniValue::VARR);
+            for (dev::h256 l : log.topics) {
+                topics.push_back(l.hex());
+            }
+            logEntrie.push_back(Pair("topics", topics));
+            logEntrie.push_back(Pair("data", HexStr(log.data)));
+            logEntries.push_back(logEntrie);
+        }
+        result.push_back(Pair("log", logEntries));
+        return result;
+    }
+#endif
 UniValue blockHeaderToJSON(const CBlock& block, const CBlockIndex* blockindex)
 {
     UniValue result(UniValue::VOBJ);
