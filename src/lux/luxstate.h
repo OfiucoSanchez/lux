@@ -81,6 +81,7 @@ public:
     virtual ~LuxState(){}
 
     friend CondensingTX;
+    friend EVMContractVM;
 
 private:
 

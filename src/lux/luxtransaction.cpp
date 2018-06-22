@@ -182,14 +182,43 @@ bool ContractExecutor::execute(ContractExecutionResult &result, bool commit)
     LuxDB db;
     if(output.version.rootVM == EVM_VM){
         EVMContractVM evm(db, env, blockGasLimit);
-        evm.execute(commit);
+        evm.execute(output, result, commit);
     }
     return true;
 }
 
 
-bool EVMContractVM::execute(bool commit)
+bool EVMContractVM::execute(ContractOutput &output, ContractExecutionResult &result, bool commit)
 {
+    dev::eth::EnvInfo envInfo(buildEthEnv());
+    if (output.address.version != AddressVersion::UNKNOWN &&
+        !globalState->addressInUse(dev::Address(output.address.data))) {
+        //contract is not in database
+        result.usedGas = output.gasLimit;
+        result.refundSender = 0;
+        result.status = ContractStatus::DOESNT_EXIST;
+        return false;
+    }
+    dev::eth::Permanence p = commit ? dev::eth::Permanence::Committed : dev::eth::Permanence::Reverted;
+    ResultExecute ethres = globalState->execute(envInfo, *globalSealEngine.get(), buildLuxTx(output), p, OnOpFunc());
+
+    //TODO, make proper status
+    switch(ethres.execRes.excepted){
+        case dev::eth::TransactionException::None:
+            result.status = ContractStatus::SUCCESS;
+            break;
+        default:
+            result.status = ContractStatus ::CODE_ERROR;
+            break;
+    }
+
+    //todo: error checking here for overflow
+    result.refundSender = (uint64_t) ethres.execRes.gasRefunded;
+    result.usedGas = (uint64_t) ethres.execRes.gasUsed;
+    //result.push_back(globalState->execute(envInfo, *globalSealEngine.get(), tx, type, OnOpFunc()));
+    globalState->db().commit();
+    globalState->dbUtxo().commit();
+    globalSealEngine.get()->deleteAddresses.clear();
     return true;
 }
 
@@ -207,6 +236,45 @@ dev::eth::EnvInfo EVMContractVM::buildEthEnv(){
     }
     eth.setLastHashes(std::move(lh));
     return eth;
+}
+
+
+UniversalAddress UniversalAddress::FromOutput(AddressVersion v, uint256 txid, uint32_t vout){
+    std::vector<unsigned char> txIdAndVout(txid.begin(), txid.end());
+    std::vector<unsigned char> voutNumberChrs;
+    if (voutNumberChrs.size() < sizeof(vout))voutNumberChrs.resize(sizeof(vout));
+    std::memcpy(voutNumberChrs.data(), &vout, sizeof(vout));
+    txIdAndVout.insert(txIdAndVout.end(),voutNumberChrs.begin(),voutNumberChrs.end());
+
+    std::vector<unsigned char> SHA256TxVout(32);
+    CSHA256().Write(txIdAndVout.data(), txIdAndVout.size()).Finalize(SHA256TxVout.data());
+
+    std::vector<unsigned char> hashTxIdAndVout(20);
+    CRIPEMD160().Write(SHA256TxVout.data(), SHA256TxVout.size()).Finalize(hashTxIdAndVout.data());
+
+    return UniversalAddress(v, hashTxIdAndVout);
+}
+
+LuxTransaction EVMContractVM::buildLuxTx(const ContractOutput &output)
+{
+    LuxTransaction txEth;
+    if (output.address.version == AddressVersion::UNKNOWN && output.OpCreate) {
+        txEth = LuxTransaction(output.value, output.gasPrice, output.gasLimit, output.data, dev::u256(0));
+        //txEth = LuxTransaction(txBit.vout[nOut].nValue, etp.gasPrice, etp.gasLimit, etp.code, dev::u256(0));
+    } else {
+        txEth = LuxTransaction(output.value, output.gasPrice, output.gasLimit, dev::Address(output.address.data),
+                                output.data, dev::u256(0));
+        //txEth = LuxTransaction(txBit.vout[nOut].nValue, etp.gasPrice, etp.gasLimit, etp.receiveAddress, etp.code,
+        //                        dev::u256(0));
+    }
+    //todo cross-contract communication?
+    dev::Address sender(output.sender.data);
+    txEth.forceSender(sender);
+    txEth.setHashWith(uintToh256(output.vout.hash));
+    txEth.setNVout(output.vout.n);
+    txEth.setVersion(output.version);
+
+    return txEth;
 }
 #endif
 
