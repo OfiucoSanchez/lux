@@ -491,7 +491,7 @@ bool AccountAbstractionLayer::calculateBalances() {
             return false;
         }
         balances[t.to] += t.value;
-        if(balances[t.from] < t.value){
+        if((uint32_t)balances[t.from] < t.value){
             LogPrintf("Account balance change would cause underflow!");
             //return false;
         }
@@ -552,6 +552,7 @@ CTransaction AccountAbstractionLayer::createCondensingTx(bool &voutsBeyondMax) {
      }
 
     //generate vouts
+    int n = 0;
     for(auto &balance : balances){
         if(balance.second == 0){
             continue;

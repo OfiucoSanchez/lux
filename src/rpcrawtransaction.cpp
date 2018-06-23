@@ -19,6 +19,7 @@
 #include "script/standard.h"
 #include "uint256.h"
 #include "univalue/univalue.h"
+#include "utilmoneystr.h"
 
 #ifdef ENABLE_WALLET
 #include "wallet.h"
@@ -351,13 +352,29 @@ UniValue createrawtransaction(const UniValue& params, bool fHelp)
 
     LOCK(cs_main);
 
-    RPCTypeCheck(params, boost::assign::list_of(UniValue::VARR)(UniValue::VOBJ));
+    RPCTypeCheck(params, {UniValue::VARR, UniValue::VOBJ, UniValue::VNUM}, true);
+
+    if (params[0].isNull() || params[1].isNull())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, arguments 1 and 2 must be non-null");
+    }
 
     UniValue inputs = params[0].get_array();
     UniValue sendTo = params[1].get_obj();
 
     CMutableTransaction rawTx;
 
+    if (params.size() > 2 && !params[2].isNull())
+    {
+        int64_t nLockTime = params[2].get_int64();
+        if (nLockTime < 0 || nLockTime > std::numeric_limits<uint32_t>::max())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, locktime out of range");
+        }
+        rawTx.nLockTime = nLockTime;
+    }
+
+    bool rbfOptIn = params.size() > 3 ? params[3].isTrue() : false;
 
     for (unsigned int i = 0; i < inputs.size(); i++)
     {
@@ -374,19 +391,36 @@ UniValue createrawtransaction(const UniValue& params, bool fHelp)
         if (nOutput < 0)
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, vout must be positive");
 
-        uint32_t nSequence = (rawTx.nLockTime ? std::numeric_limits<uint32_t>::max() - 1 : std::numeric_limits<uint32_t>::max());
+        uint32_t nSequence = 0;
+        if (rbfOptIn)
+        {
+            nSequence = MAX_BIP125_RBF_SEQUENCE;
+        }
+        else if (rawTx.nLockTime)
+        {
+            nSequence = std::numeric_limits<uint32_t>::max() - 1;
+        }
+        else
+        {
+            nSequence = std::numeric_limits<uint32_t>::max();
+        }
 
         // set the sequence number if passed in the parameters object
         const UniValue& sequenceObj = find_value(o, "sequence");
-        if (sequenceObj.isNum()) {
+        if (sequenceObj.isNum())
+        {
             int64_t seqNr64 = sequenceObj.get_int64();
             if (seqNr64 < 0 || seqNr64 > std::numeric_limits<uint32_t>::max())
+            {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, sequence number is out of range");
+            }
             else
+            {
                 nSequence = (uint32_t)seqNr64;
+            }
         }
 
-        CTxIn in(COutPoint(txid, nOutput));
+        CTxIn in(COutPoint(txid, nOutput), CScript(), nSequence);
         rawTx.vin.push_back(in);
     }
 

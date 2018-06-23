@@ -2584,8 +2584,8 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                 //begin contract handling!
 
                 CAmount nTxFee = view.GetValueIn(tx)-tx.GetValueOut();
-                uint64_t gasFeeSum=0;
-                uint64_t gasLimitSum=0;
+                //uint64_t gasFeeSum=0;
+                //uint64_t gasLimitSum=0;
                 bool nonZeroVersion = false;
 #if 0
                 for(uint32_t nvout=0; i<tx.vout.size(); nvout++) {
@@ -2835,16 +2835,16 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                     for (size_t i = 0; i < block.vtx.size(); i++) {
                         if(i >= checkBlock.vtx.size()){
                             UniValue result(UniValue::VOBJ);
-                            TxToJSON(*block.vtx[i].get(), block.GetHash(), result);
+                            TxToJSON(block.vtx[i], block.GetHash(), result);
                             LogPrintf("Unexpected transaction: %s\n", result.write(true, 2));
                      }else {
-                        if (block.vtx[i]->GetHash() != checkBlock.vtx[i]->GetHash()) {
+                        if (block.vtx[i].GetHash() != checkBlock.vtx[i].GetHash()) {
                              LogPrintf("Mismatched transaction at entry %i\n", i);
                              UniValue resultActual(UniValue::VOBJ);
-                             TxToJSON(*block.vtx[i].get(), block.GetHash(), resultActual);
+                             TxToJSON(block.vtx[i], block.GetHash(), resultActual);
                              LogPrintf("Actual: %s\n", resultActual.write(true, 2));
                              UniValue resultExpected(UniValue::VOBJ);
-                             TxToJSON(*checkBlock.vtx[i].get(), block.GetHash(), resultExpected);
+                             TxToJSON(checkBlock.vtx[i], block.GetHash(), resultExpected);
                              LogPrintf("Expected: %s\n", resultExpected.write(true, 2));
                             }
                         }

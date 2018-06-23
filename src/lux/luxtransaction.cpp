@@ -148,6 +148,7 @@ ContractEnvironment ContractExecutor::buildEnv() {
         env.blockHashes[i] = *tip->phashBlock;
         tip = tip->pprev;
     }
+    return env;
 }
 #if 0
     if(block.IsProofOfStake()){

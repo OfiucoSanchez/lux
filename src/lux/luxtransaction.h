@@ -186,7 +186,7 @@ private:
 #if 0
     const CBlock& block;
 #endif
-    const uint64_t blockGasLimit;
+    uint64_t blockGasLimit;
     ContractOutput output;
 
 };
