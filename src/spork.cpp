@@ -41,7 +41,7 @@ void ProcessSpork(CNode* pfrom, const std::string& strCommand, CDataStream& vRec
 
         uint256 hash = spork.GetHash();
         // Seach by ID only
-        if(mapSporks.count(hash) && mapSporksActive.count(spork.nSporkID)) {
+        if(mapSporksActive.count(spork.nSporkID)) {
             if(mapSporksActive[spork.nSporkID].nTimeSigned >= spork.nTimeSigned){
                 if(fDebug) LogPrintf("spork - seen %s block %d \n", hash.ToString().c_str(), chainActive.Tip()->nHeight);
                 return;
