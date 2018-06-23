@@ -867,7 +867,7 @@ void JSONRequest::parse(const UniValue& valRequest)
         throw JSONRPCError(RPC_INVALID_REQUEST, "Method must be a string");
     strMethod = valMethod.get_str();
     if (strMethod != "getblocktemplate")
-        LogPrint("rpc", "ThreadRPCServer method=%s\n", SanitizeString(strMethod));
+        LogPrint("rpc", "ThreadRPCServer method=%s\n", SecureString(strMethod));
 
     // Parse params
     UniValue valParams = find_value(request, "params");

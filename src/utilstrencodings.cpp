@@ -20,21 +20,24 @@
 
 using namespace std;
 
-string SanitizeString(const string& str)
+static const string CHARS_ALPHA_NUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+static const string SAFE_CHARS[] =
+        {
+                CHARS_ALPHA_NUM + " .,;-_/:?@()", // SAFE_CHARS_DEFAULT
+                CHARS_ALPHA_NUM + " .,;-_?@" // SAFE_CHARS_UA_COMMENT
+        };
+
+string SecureString(const string& str, int rule)
 {
-    /**
-     * safeChars chosen to allow simple messages/URLs/email addresses, but avoid anything
-     * even possibly remotely dangerous like & or >
-     */
-    static string safeChars("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890 .,;_/:?@()");
     string strResult;
-    for (std::string::size_type i = 0; i < str.size(); i++) {
-        if (safeChars.find(str[i]) != std::string::npos)
+    for (std::string::size_type i = 0; i < str.size(); i++)
+    {
+        if (SAFE_CHARS[rule].find(str[i]) != std::string::npos)
             strResult.push_back(str[i]);
     }
     return strResult;
 }
-
 const signed char p_util_hexdigit[256] =
     {
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,

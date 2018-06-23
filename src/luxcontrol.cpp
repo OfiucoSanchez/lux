@@ -478,7 +478,7 @@ void LuxController::add_onion_cb(LuxControlConnection& _conn, const LuxControlRe
         if (service_id.empty()) {
             LogPrintf("lux: Error parsing ADD_ONION parameters:\n");
             for (const std::string &s : reply.lines) {
-                LogPrintf("    %s\n", SanitizeString(s));
+                LogPrintf("    %s\n", SecureString(s));
             }
             return;
         }
@@ -561,7 +561,7 @@ void LuxController::authchallenge_cb(LuxControlConnection& _conn, const LuxContr
         if (l.first == "AUTHCHALLENGE") {
             std::map<std::string,std::string> m = ParseLuxReplyMapping(l.second);
             if (m.empty()) {
-                LogPrintf("lux: Error parsing AUTHCHALLENGE parameters: %s\n", SanitizeString(l.second));
+                LogPrintf("lux: Error parsing AUTHCHALLENGE parameters: %s\n", SecureString(l.second));
                 return;
             }
             std::vector<uint8_t> serverHash = ParseHex(m["SERVERHASH"]);

@@ -83,7 +83,6 @@ BITCOIN_CORE_H = \
   activemasternode.h \
   addrman.h \
   alert.h \
-  allocators.h \
   amount.h \
   base58.h \
   bip39.h \
@@ -340,7 +339,6 @@ univalue_libbitcoin_univalue_a_SOURCES = \
 libbitcoin_consensus_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 libbitcoin_consensus_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_consensus_a_SOURCES = \
-  allocators.cpp \
   amount.h \
   chainparamsbase.cpp \
   coins.cpp \
@@ -387,7 +385,6 @@ libbitcoin_common_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) -DLUX_BUILD
 libbitcoin_common_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_common_a_CFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) -std=c99 -fPIC
 libbitcoin_common_a_SOURCES = \
-  allocators.cpp \
   amount.cpp \
   base58.cpp \
   bech32.cpp \
@@ -603,7 +600,7 @@ libbitcoin_util_a_CPPFLAGS = $(BITCOIN_INCLUDES)
 libbitcoin_util_a_SOURCES = \
  support/pagelocker.cpp \
  support/cleanse.cpp \
-  allocators.cpp \
+  support/pagelocker.cpp \
   compat/strnlen.cpp \
   compat/glibc_sanity.cpp \
   compat/glibcxx_sanity.cpp \

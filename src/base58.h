@@ -19,7 +19,9 @@
 #include "pubkey.h"
 #include "script/script.h"
 #include "script/standard.h"
-
+#include "support/allocators/zeroafterfree.h"
+//#include "allocators.h"
+#include "key.h"
 #include <string>
 #include <vector>
 
@@ -77,7 +79,7 @@ class CBase58Data
 {
 protected:
     //! the version byte(s)
-    std::vector<unsigned char> vchVersion;
+    unsigned char nVersion;
 
     //! the actually encoded data
     typedef std::vector<unsigned char, zero_after_free_allocator<unsigned char> > vector_uchar;
