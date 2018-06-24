@@ -190,6 +190,7 @@ public:
     unsigned int nNonce;
     uint256 hashStateRoot; // lux
     uint256 hashUTXORoot; // lux
+    std::vector<unsigned char> vchBlockSig;
 
     //! (memory only) Sequential id assigned to distinguish order in which blocks are received.
     uint32_t nSequenceId;
@@ -229,7 +230,7 @@ public:
         nNonce = 0;
         hashStateRoot  = uint256(); // lux
         hashUTXORoot   = uint256(); // lux
-
+        vchBlockSig.clear();
     }
 
     CBlockIndex()
@@ -248,7 +249,7 @@ public:
         nNonce = block.nNonce;
         hashStateRoot  = block.hashStateRoot; // lux
         hashUTXORoot   = block.hashUTXORoot; // lux
-
+        vchBlockSig    = block.vchBlockSig; // lux
 
         //Proof of Stake
         bnChainTrust = 0;
@@ -301,6 +302,7 @@ public:
         block.nNonce = nNonce;
         block.hashStateRoot  = hashStateRoot; // lux
         block.hashUTXORoot   = hashUTXORoot; // lux
+        block.vchBlockSig    = vchBlockSig;
         return block;
     }
 
@@ -489,6 +491,7 @@ public:
             READWRITE(hashStateRoot);       // lux
             READWRITE(hashUTXORoot);        // lux
         }
+        READWRITE(vchBlockSig); // lux
     }
 
     uint256 GetBlockHash() const
@@ -502,6 +505,7 @@ public:
         block.nNonce = nNonce;
         block.hashStateRoot   = hashStateRoot; // lux
         block.hashUTXORoot    = hashUTXORoot; // lux
+        block.vchBlockSig     = vchBlockSig;
         return block.GetHash(nHeight >= Params().SwitchPhi2Block());
     }
 

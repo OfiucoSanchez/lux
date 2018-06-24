@@ -14,6 +14,8 @@
 /** The maximum allowed size for a serialized block, in bytes (network rule) */
 static const unsigned int MAX_BLOCK_SIZE = 6000000;
 
+static const int SER_WITHOUT_SIGNATURE = 1 << 3;
+
 /** Nodes collect new transactions into a block, hash them into a hash tree,
  * and scan through nonce values to make the block's hash satisfy proof-of-work
  * requirements.  When they solve the proof-of-work, they broadcast the block
@@ -35,7 +37,7 @@ public:
     uint32_t nNonce;
     uint256 hashStateRoot; // lux
     uint256 hashUTXORoot; // lux
-
+    std::vector<unsigned char> vchBlockSig;
     CBlockHeader()
     {
         SetNull();
@@ -58,6 +60,8 @@ public:
         if ((this->nVersion & (1 << 30)) != 0) {
             READWRITE(hashStateRoot);       // lux
             READWRITE(hashUTXORoot);        // lux
+            if (!(s.GetType() & SER_WITHOUT_SIGNATURE))
+                READWRITE(vchBlockSig);
         }
     }
 
@@ -71,6 +75,7 @@ public:
         nNonce = 0;
         hashStateRoot = 0; // lux
         hashUTXORoot = 0; // lux
+        vchBlockSig.clear();
     }
 
     bool IsNull() const
@@ -79,6 +84,8 @@ public:
     }
 
     uint256 GetHash(bool phi2block = false) const;
+
+    uint256 GetHashWithoutSign() const;
 
     int64_t GetBlockTime() const {
         return (int64_t)nTime;
@@ -142,6 +149,7 @@ public:
         block.nNonce         = nNonce;
         block.hashStateRoot  = hashStateRoot; // lux
         block.hashUTXORoot   = hashUTXORoot; // lux
+        block.vchBlockSig    = vchBlockSig;
         return block;
     }
 

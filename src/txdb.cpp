@@ -263,6 +263,7 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
                 pindexNew->nTx = diskindex.nTx;
                 pindexNew->hashStateRoot  = diskindex.hashStateRoot; // lux
                 pindexNew->hashUTXORoot   = diskindex.hashUTXORoot; // lux
+                pindexNew->vchBlockSig    = diskindex.vchBlockSig; // lux
 
                 // Proof Of Stake
                 pindexNew->nMint = diskindex.nMint;

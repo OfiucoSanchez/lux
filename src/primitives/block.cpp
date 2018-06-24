@@ -24,6 +24,10 @@ uint256 CBlockHeader::GetHash(bool phi2block) const {
     }
 }
 
+uint256 CBlockHeader::GetHashWithoutSign() const {
+    return SerializeHash(*this, SER_GETHASH | SER_WITHOUT_SIGNATURE);
+}
+
 uint256 CBlock::BuildMerkleTree(bool* fMutated) const
 {
     /* WARNING! If you're reading this because you're learning about crypto
@@ -129,6 +133,7 @@ std::string CBlock::ToString() const
         nTime, nBits, nNonce,
         hashStateRoot.ToString(), // lux
         hashUTXORoot.ToString(), // lux
+        HexStr(vchBlockSig),
         vtx.size());
     for (unsigned int i = 0; i < vtx.size(); i++)
     {
