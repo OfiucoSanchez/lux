@@ -5667,15 +5667,16 @@ uint32_t GetFetchFlags(CNode* pfrom, CBlockIndex* pprev, const Consensus::Params
 int GetMajorVersionFromVersion(const string& cleanVersion) {
     size_t delimPos = cleanVersion.find(":");
     size_t dotPos = cleanVersion.find(".", delimPos + 1);
+
     if (delimPos != string::npos && dotPos != string::npos && dotPos < cleanVersion.length()) {
-        string strMajorVer = cleanVersion.substr(delimPos + 1, dotPos - delimPos);
+        string strMajorVer = cleanVersion.substr(delimPos + 1, dotPos - delimPos); //find a string number between : and .
         istringstream ss(strMajorVer);
         int majorVersion;
         ss >> majorVersion;
         return majorVersion;
-    } else {
-        return 0;
     }
+
+    return 0;
 }
 
 static bool ProcessMessage(CNode* pfrom, const string &strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams)
@@ -5692,6 +5693,7 @@ static bool ProcessMessage(CNode* pfrom, const string &strCommand, CDataStream& 
 
     //reject any message from not upgraded peer, which has already sent us their version, if current chain is after the hardfork
     if (pfrom->cleanSubVer != "" && GetMajorVersionFromVersion(pfrom->cleanSubVer) < CLIENT_VERSION_MAJOR && chainActive.Height() >= chainparams.SwitchPhi2Block()) {
+        LogPrintf("peer=%d using obsolete version %i; disconnecting\n", pfrom->id, pfrom->nVersion);
         pfrom->PushMessage("reject", strCommand, REJECT_OBSOLETE);
         pfrom->fDisconnect = true;
         return false;
@@ -5739,6 +5741,7 @@ static bool ProcessMessage(CNode* pfrom, const string &strCommand, CDataStream& 
         }
         //disconnect nodes, which are not upgraded, but the current best block is after hardfork
         if (GetMajorVersionFromVersion(pfrom->cleanSubVer) < CLIENT_VERSION_MAJOR && chainActive.Height() >= chainparams.SwitchPhi2Block()) {
+            LogPrintf("peer=%d using obsolete version %i; disconnecting\n", pfrom->id, pfrom->nVersion);
             pfrom->PushMessage("reject", strCommand, REJECT_OBSOLETE);
             pfrom->fDisconnect = true;
             return false;
@@ -6533,7 +6536,7 @@ bool ProcessMessages(CNode* pfrom)
     // this maintains the order of responses
     if (!pfrom->vRecvGetData.empty()) return fOk;
 
-    std::deque<CNetMessage>::iterator it = pfrom->vRecvMsg.begin();
+    std::list<CNetMessage>::iterator it = pfrom->vRecvMsg.begin();
     while (!pfrom->fDisconnect && it != pfrom->vRecvMsg.end()) {
         // Don't bother if send buffer is too full to respond anyway
         if (pfrom->nSendSize >= SendBufferSize())
@@ -6542,17 +6545,14 @@ bool ProcessMessages(CNode* pfrom)
         // get next message
         CNetMessage& msg = *it;
 
-        //if (fDebug)
-        //    LogPrintf("ProcessMessages(message %u msgsz, %u bytes, complete:%s)\n",
-        //            msg.hdr.nMessageSize, msg.vRecv.size(),
-        //            msg.complete() ? "Y" : "N");
-
         // end, if an incomplete message is found
         if (!msg.complete())
             break;
 
         // at this point, any failure means we can delete the current message
         it++;
+
+        msg.SetVersion(pfrom->GetRecvVersion());
 
         // Scan for message start
         if (memcmp(msg.hdr.pchMessageStart, chainparams.MessageStart(), CMessageHeader::MESSAGE_START_SIZE) != 0) {

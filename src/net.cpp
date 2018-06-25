@@ -119,6 +119,11 @@ boost::condition_variable messageHandlerCondition;
 static CNodeSignals g_signals;
 CNodeSignals& GetNodeSignals() { return g_signals; }
 
+void WakeMessageHandler()
+{
+    messageHandlerCondition.notify_one();
+}
+
 void AddOneShot(string strDest)
 {
     LOCK(cs_vOneShots);
@@ -595,13 +600,18 @@ void CNode::copyStats(CNodeStats& stats)
 #undef X
 
 // requires LOCK(cs_vRecvMsg)
-bool CNode::ReceiveMsgBytes(const char* pch, unsigned int nBytes)
+bool CNode::ReceiveMsgBytes(const char *pch, unsigned int nBytes, bool& complete)
 {
+    complete = false;
+    int64_t nTimeMicros = GetTimeMicros();
+    //LOCK(cs_vRecv);
+    nLastRecv = nTimeMicros / 1000000;
+    nRecvBytes += nBytes;
     while (nBytes > 0) {
         // get current incomplete message, or create a new one
         if (vRecvMsg.empty() ||
             vRecvMsg.back().complete())
-            vRecvMsg.push_back(CNetMessage(Params().MessageStart(), SER_NETWORK, nRecvVersion));
+            vRecvMsg.push_back(CNetMessage(Params().MessageStart(), SER_NETWORK, INIT_PROTO_VERSION));
 
         CNetMessage& msg = vRecvMsg.back();
 
@@ -616,7 +626,7 @@ bool CNode::ReceiveMsgBytes(const char* pch, unsigned int nBytes)
             return false;
 
         if (msg.in_data && msg.hdr.nMessageSize > MAX_PROTOCOL_MESSAGE_LENGTH) {
-            LogPrint("net", "Oversized message from peer=%i, disconnecting", GetId());
+            LogPrint("net", "Oversized message from peer=%i, disconnecting\n", GetId());
             return false;
         }
 
@@ -624,8 +634,8 @@ bool CNode::ReceiveMsgBytes(const char* pch, unsigned int nBytes)
         nBytes -= handled;
 
         if (msg.complete()) {
-            msg.nTime = GetTimeMicros();
-            messageHandlerCondition.notify_one();
+            msg.nTime = nTimeMicros;
+            complete = true;
         }
     }
 
@@ -736,12 +746,7 @@ void ThreadSocketHandler()
             // Disconnect unused nodes
             vector<CNode*> vNodesCopy = vNodes;
             BOOST_FOREACH (CNode* pnode, vNodesCopy) {
-                if (pnode->fDisconnect ||
-                    (pnode->GetRefCount() <= 0 && pnode->vRecvMsg.empty() && pnode->nSendSize == 0 && pnode->ssSend.empty())) {
-
-                    //LogPrintf("ThreadSocketHandler -- removing node: peer=%d addr=%s nRefCount=%d fNetworkNode=%d fInbound=%d fMasternode=%d\n",
-                      //        pnode->id, pnode->addr.ToString(), pnode->GetRefCount(), pnode->fNetworkNode, pnode->fInbound, pnode->fMasternode);
-
+                if (pnode->fDisconnect) {
                     // remove from vNodes
                     vNodes.erase(remove(vNodes.begin(), vNodes.end(), pnode), vNodes.end());
 
@@ -949,11 +954,13 @@ void ThreadSocketHandler()
                         char pchBuf[0x10000];
                         int nBytes = recv(pnode->hSocket, pchBuf, sizeof(pchBuf), MSG_DONTWAIT);
                         if (nBytes > 0) {
-                            if (!pnode->ReceiveMsgBytes(pchBuf, nBytes))
+                            bool notify = false;
+                            if (!pnode->ReceiveMsgBytes(pchBuf, nBytes, notify))
                                 pnode->CloseSocketDisconnect();
-                            pnode->nLastRecv = GetTime();
-                            pnode->nRecvBytes += nBytes;
                             pnode->RecordBytesRecv(nBytes);
+                            if (notify) {
+                                WakeMessageHandler();
+                            }
                         } else if (nBytes == 0) {
                             // socket closed gracefully
                             if (!pnode->fDisconnect)
@@ -1438,7 +1445,7 @@ void ThreadMessageHandler()
                         pnode->CloseSocketDisconnect();
 
                     if (pnode->nSendSize < SendBufferSize()) {
-                        if (!pnode->vRecvGetData.empty() || (!pnode->vRecvMsg.empty() && pnode->vRecvMsg[0].complete())) {
+                        if (!pnode->vRecvGetData.empty() || (!pnode->vRecvMsg.empty() && pnode->vRecvMsg.front().complete())) {
                             fSleep = false;
                         }
                     }
