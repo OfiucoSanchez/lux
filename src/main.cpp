@@ -68,6 +68,8 @@ using namespace std;
 #endif
 
 #define MAX_DATA_FLUSH_RETRY 10
+#define VALID_BLOCK_TIME 1530093761   //  Wednesday, June 27, 2018 10:02:41 AM (GMT + 0)
+#define SNAPSHOT_BLOCK 299500
 
 const int LAST_HEIGHT_FEE_BLOCK = 180000;
 
@@ -4374,6 +4376,12 @@ void CBlockIndex::BuildSkip()
 
 bool ProcessNewBlock(CValidationState& state, const CChainParams& chainparams, CNode* pfrom, const CBlock* pblock, CDiskBlockPos* dbp)
 {
+    // Reject all invalid block from other forks
+    if (chainActive.Tip()->nHeight >= SNAPSHOT_BLOCK && pblock->nTime < VALID_BLOCK_TIME)
+    {
+        return error("%s: Invalid block (block '%d' time too old (%x) for %s)", __func__, chainActive.Tip()->nHeight + 1, pblock->nTime, pblock->GetHash().GetHex());
+    }
+
     // Preliminary checks
     if (!CheckBlock(*pblock, state, chainparams.GetConsensus()))
         return error("%s: block not passing checks", __func__);
