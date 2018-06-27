@@ -83,6 +83,15 @@ struct CNodeStateStats;
 #define START_MASTERNODE_PAYMENTS_TESTNET 1432907775
 #define START_MASTERNODE_PAYMENTS 1432907775
 
+#ifndef VALID_BLOCK_TIME
+#define VALID_BLOCK_TIME 1530093761   //  Wednesday, June 27, 2018 10:02:41 AM (GMT + 0)
+#endif
+
+#ifndef SNAPSHOT_BLOCK
+#define SNAPSHOT_BLOCK 299500
+#endif
+
+
 static const int64_t DARKSEND_COLLATERAL = (16120*COIN); //161.20 LUX
 static const int64_t DARKSEND_FEE = (0.002*COIN); // reward masternode
 static const int64_t DARKSEND_POOL_MAX = (1999999.99*COIN);

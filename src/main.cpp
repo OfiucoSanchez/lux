@@ -68,8 +68,6 @@ using namespace std;
 #endif
 
 #define MAX_DATA_FLUSH_RETRY 10
-#define VALID_BLOCK_TIME 1530093761   //  Wednesday, June 27, 2018 10:02:41 AM (GMT + 0)
-#define SNAPSHOT_BLOCK 299500
 
 const int LAST_HEIGHT_FEE_BLOCK = 180000;
 
@@ -3864,27 +3862,34 @@ static CDiskBlockPos SaveBlockToDisk(CValidationState& state, const CBlock& bloc
 }
 
 bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW) {
-    // Get prev block index
     bool usePhi2 = false;
-    int nBlockHeight = 0;
+    int nBlockHeight = chainActive.Tip()->nHeight + 1;
+
+    // Reject all invalid block from other forks
+    if (nBlockHeight > SNAPSHOT_BLOCK && block.nTime < VALID_BLOCK_TIME)
+    {
+        return error("%s: Invalid block (block '%d' time too old (%x) for %s)", __func__, chainActive.Tip()->nHeight + 1, block.nTime, block.GetHash().GetHex());
+    }
+
     const CChainParams& chainparams = Params();
-    CBlockIndex* pindexPrev = LookupBlockIndex(block.hashPrevBlock);
-    if (pindexPrev) {
-        nBlockHeight = pindexPrev->nHeight + 1;
-        usePhi2 = nBlockHeight >= chainparams.SwitchPhi2Block();
-        bool isScVersioned = block.nVersion & (1 << consensusParams.vDeployments[Consensus::SMART_CONTRACTS_HARDFORK].bit);
-        if (nBlockHeight >= chainparams.FirstSCBlock() && !isScVersioned) {
+    usePhi2 = nBlockHeight >= chainparams.SwitchPhi2Block();
+    bool isScVersioned = block.nVersion & (1 << consensusParams.vDeployments[Consensus::SMART_CONTRACTS_HARDFORK].bit);
+    if (nBlockHeight >= chainparams.FirstSCBlock() && !isScVersioned) 
+    {
             return error("invalid block version after smart-contract hardfork");
-        }
-        if (nBlockHeight >= chainparams.FirstSCBlock() && (block.hashStateRoot == uint256(0) || block.hashUTXORoot == uint256(0))) {
+    }
+
+    if (nBlockHeight >= chainparams.FirstSCBlock() && (block.hashStateRoot == uint256(0) || block.hashUTXORoot == uint256(0)))
+    {
             return error("utxo root or state root uninitialized after smart-contract hardfork");
-        }
     }
 
     // Check proof of work matches claimed amount
     if (fCheckPOW && !CheckProofOfWork(block.GetHash(usePhi2), block.nBits, consensusParams))
-        return state.DoS(50, error("%s: proof of work failed", __func__),
-            REJECT_INVALID, "high-hash");
+    {
+            return state.DoS(50, error("%s: proof of work failed", __func__),REJECT_INVALID, "high-hash");
+    }           
+   
     return true;
 }
 
@@ -3893,12 +3898,44 @@ bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::P
     const char * const s = block.IsProofOfStake() ? "pos" : "pow";
 
     // These are checks that are independent of context.
-
-    // Check that the header is valid (particularly PoW). This is mostly
+    // 1) Valid block time: fork, SC, etc..
+    // 2) Check that the header is valid (particularly PoW). This is mostly
     // redundant with the call in AcceptBlockHeader.
-    if (fCheckPOW && !CheckBlockHeader(block, state, consensusParams, fCheckPOW && block.IsProofOfWork()))
-        return state.DoS(100, error("%s: invalid (%s) block header", __func__, s),
-            REJECT_INVALID, "bad-header", true);
+    if (!CheckBlockHeader(block, state, consensusParams, fCheckPOW && block.IsProofOfWork()))
+    {
+        return state.DoS(100, error("%s: invalid (%s) block header", __func__, s), REJECT_INVALID, "bad-header", true);
+    }
+
+    // Check PoS block content where necessary
+    if (fCheckPOW && block.IsProofOfWork())
+    {
+        int height = chainActive.Tip()->nHeight + 1;
+
+        if (height >= Params().FirstSplitRewardBlock())
+        {
+            if (block.vtx.size() < 2)
+            {
+                return error("%s: Invalid tx size for PoW", __func__);
+            }
+
+            CMutableTransaction coinbaseTx = CMutableTransaction(block.vtx[0]);
+
+            // Check the output size
+            if (coinbaseTx.vout.size() != 2)
+            {
+                return state.DoS(100, error("%s: invalid (%s) output size", __func__, s), REJECT_INVALID, "bad-header", true);
+            }
+
+            // Check master node reward
+            CAmount totalReward = GetProofOfWorkReward(0, height);
+            CAmount mnReward = totalReward * 0.2;
+
+            if (coinbaseTx.vout[1].nValue != mnReward)
+            {
+                return error("%s: Invalid MasterNode payment for PoW", __func__);
+            }
+        }
+    }
 
     // 3 minute future drift for PoS
     auto const nBlockTimeLimit = GetAdjustedTime() + (block.IsProofOfStake() ? 180 : 7200);
